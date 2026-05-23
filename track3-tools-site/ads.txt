@@ -1,0 +1,3 @@
+# Google AdSense
+# 上线后替换为你的 publisher ID
+# google.com, pub-XXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0

@@ -1,0 +1,28 @@
+# 敏感文件
+.env
+*.local
+*.secret
+credentials.json
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 备份（本地保留，不提交）
+output-backup-*/

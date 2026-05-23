@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON格式化 - 在线JSON格式化验证工具 | 浏览器端处理</title>
+    <meta name="description" content="免费的在线JSON格式化工具，所有处理在浏览器端完成，数据不会上传到服务器。支持JSON格式化、压缩、验证。">
+    <link rel="canonical" href="https://你的域名/tools/json-formatter.html">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-4xl mx-auto px-4 py-3">
+            <a href="../index.html" class="text-blue-600 hover:underline">← 返回工具列表</a>
+        </div>
+    </nav>
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-2">JSON格式化工具</h1>
+        <p class="text-gray-500 mb-6">所有处理在浏览器端完成，数据不会上传到服务器 🔒</p>
+
+        <textarea id="input" class="w-full h-48 p-4 border rounded font-mono text-sm" placeholder="粘贴JSON..." maxlength="1048576"></textarea>
+        <div class="flex gap-2 my-4">
+            <button onclick="safeFormat()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">格式化</button>
+            <button onclick="safeCompress()" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700">压缩</button>
+            <button onclick="safeValidate()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">验证</button>
+            <button onclick="clearAll()" class="border px-4 py-2 rounded hover:bg-gray-100">清空</button>
+        </div>
+        <div id="status" class="text-sm mb-2"></div>
+        <pre id="output" class="bg-gray-100 p-4 rounded overflow-auto max-h-96 font-mono text-sm"></pre>
+    </main>
+    <script>
+        const MAX_SIZE = 1048576; // 1MB
+        const input = document.getElementById('input');
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+
+        function showStatus(msg, isError) {
+            status.textContent = msg;
+            status.className = 'text-sm mb-2 ' + (isError ? 'text-red-600' : 'text-green-600');
+        }
+
+        function safeFormat() {
+            try {
+                if (input.value.length > MAX_SIZE) {
+                    showStatus('输入内容过大，请限制在1MB以内', true);
+                    return;
+                }
+                const obj = JSON.parse(input.value);
+                output.textContent = JSON.stringify(obj, null, 2);
+                showStatus('格式化成功', false);
+            } catch(e) {
+                output.textContent = 'JSON 格式无效，请检查输入内容';
+                console.error('JSON parse error:', e);
+                showStatus('格式错误，请检查JSON语法', true);
+            }
+        }
+
+        function safeCompress() {
+            try {
+                if (input.value.length > MAX_SIZE) {
+                    showStatus('输入内容过大，请限制在1MB以内', true);
+                    return;
+                }
+                const obj = JSON.parse(input.value);
+                output.textContent = JSON.stringify(obj);
+                showStatus('压缩成功', false);
+            } catch(e) {
+                output.textContent = 'JSON 格式无效，请检查输入内容';
+                console.error('JSON parse error:', e);
+                showStatus('格式错误，请检查JSON语法', true);
+            }
+        }
+
+        function safeValidate() {
+            try {
+                if (input.value.length > MAX_SIZE) {
+                    showStatus('输入内容过大，请限制在1MB以内', true);
+                    return;
+                }
+                JSON.parse(input.value);
+                output.textContent = '✅ JSON 格式有效';
+                showStatus('验证通过', false);
+            } catch(e) {
+                output.textContent = 'JSON 格式无效，请检查输入内容';
+                console.error('JSON validation error:', e);
+                showStatus('验证失败', true);
+            }
+        }
+
+        function clearAll() {
+            input.value = '';
+            output.textContent = '';
+            status.textContent = '';
+        }
+    </script>
+</body>
+</html>

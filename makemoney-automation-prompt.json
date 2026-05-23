@@ -1,0 +1,199 @@
+{
+  "meta": {
+    "project_name": "makemoney-automation",
+    "domain": "custom",
+    "custom_domain_name": "在线创收自动化",
+    "created_at": "2026-05-22T18:30:00+08:00",
+    "source": "real-want"
+  },
+  "requirements": {
+    "core_problem": "利用AI+自动化技术构建3条轻量被动收入轨道，实现从快速变现到长期躺赚的全覆盖。",
+    "target_users": "最终用户分为三类：闲鱼买家（需要AI工具的个人/小企业）、内容读者（浏览聚合资讯的普通用户）、工具使用者（使用在线工具的访客）",
+    "user_role": "独立开发者/副业探索者，会写Python/JS脚本，无完整产品开发经验，每天可用1-2小时",
+    "usage_scenario": "利用业余时间（每天1-2小时）搭建和部署自动化系统，系统搭建完成后每周仅需1-2小时维护，其余时间自动运行产生收入",
+    "must_have_features": [
+      "轨道1：在Coze平台搭建3-5个实用AI智能体，在闲鱼上架销售模板+接定制单",
+      "轨道2：Python爬虫自动采集多平台热榜数据，AI摘要+改写，自动发布到静态站和内容平台",
+      "轨道3：纯前端在线工具站（JSON格式化、时间戳转换、图片压缩等5+工具），浏览器端处理",
+      "全部项目自动化程度≥90%，搭建完成后每周维护≤2小时",
+      "月运营成本控制在¥200以内"
+    ],
+    "nice_to_have_features": [
+      "内容管线支持多语言（中英文双语输出）",
+      "工具站增加Pro版付费功能",
+      "Coze模板打包为SOP文档二次销售",
+      "数据看板统一展示三条轨道的收入/流量"
+    ],
+    "deliverables": [
+      "3-5个Coze智能体（含闲鱼商品文案）",
+      "内容自动化管线完整代码（爬虫+AI处理+发布）",
+      "信息聚合静态站（部署到Cloudflare Pages）",
+      "在线工具站（5+工具，纯前端，部署到Cloudflare Pages）",
+      "部署文档和运维手册"
+    ]
+  },
+  "constraints": {
+    "technical": [
+      "Python优先（用户技术栈匹配）",
+      "纯前端工具站不依赖后端服务器",
+      "内容管线使用免费/低价API（智谱GLM或DeepSeek）",
+      "所有静态站部署到Cloudflare Pages（免费）",
+      "不碰加密货币、区块链相关"
+    ],
+    "time_budget": "每日1-2小时，预计总工期4-6周完成全部搭建",
+    "scale": "初期小规模：工具站日均UV 0→500（6个月目标），内容站日均UV 0→500（6个月目标），闲鱼月销10-20单",
+    "environment": "个人电脑开发 + Cloudflare Pages部署静态站 + Coze云端平台 + 可选用VPS跑爬虫定时任务",
+    "collaboration": false
+  },
+  "user_preferences": {
+    "language": "Python",
+    "code_style": "简洁，少注释，能跑优先",
+    "architecture": "单体脚本+静态站，不搞微服务",
+    "tech_stack": {
+      "frontend": "原生HTML+CSS+JS（Tailwind CSS可选），不引入React/Vue等框架以保持轻量",
+      "backend": "Python 3.x（爬虫+数据处理脚本），FastAPI（如需API）",
+      "database": "无需数据库（工具站纯前端），内容站可用JSON文件或SQLite",
+      "deployment": "Cloudflare Pages（静态站）+ GitHub Actions（定时触发爬虫）或VPS cron",
+      "other": [
+        "Coze（字节跳动AI智能体平台）",
+        "智谱GLM-4.6 API 或 DeepSeek API（AI文本处理，¥1-2/百万token）",
+        "Resend/SendGrid（邮件发送，如需newsletter功能）"
+      ]
+    }
+  },
+  "success_criteria": [
+    {
+      "criterion": "轨道1：2周内闲鱼上架首个Coze智能体模板",
+      "metric": "上架后30天内产生≥¥500收入（约2-3单定制，单价¥200-300/单）",
+      "source": "多篇实操案例：18天赚8400元（约¥467/天）、30天126单营业额2.1万元（约¥700/天），保守取首月¥500作为最低可接受门槛"
+    },
+    {
+      "criterion": "轨道1：3个月内闲鱼累计收入",
+      "metric": "累计≥¥3000（约15单定制或30份模板销售）",
+      "source": "闲鱼Coze智能体定制2025年仍处红利期，竞争尚不饱和，先行者月入过万"
+    },
+    {
+      "criterion": "轨道2：内容自动化管线搭建完成",
+      "metric": "2个月内完成数据采集→AI处理→自动发布→静态站展示的完整管线",
+      "source": "参考solo dev标准：管线类项目2-4周MVP，留1倍buffer"
+    },
+    {
+      "criterion": "轨道2：6个月内内容站广告收入",
+      "metric": "月广告收入≥¥500（约日均500UV × 30天 × RPM $3 × 汇率7 ≈ ¥315，保守需日均800+UV；或RPM较高的内容类型）",
+      "source": "Google AdSense 2025基准：内容类站点RPM $2-5，技术/工具类RPM $5-12"
+    },
+    {
+      "criterion": "轨道3：1个月内工具站上线",
+      "metric": "上线≥5个可用在线工具，全部浏览器端处理（隐私卖点）",
+      "source": "参考solo dev最佳实践：单个简单工具开发4-8小时，5个工具约20-40小时，4周内每日1-2小时可完成"
+    },
+    {
+      "criterion": "轨道3：12个月内工具站广告收入",
+      "metric": "月广告收入≥¥1000（约日均1000UV × 30天 × RPM $5 × 汇率7 ≈ ¥1050）",
+      "source": "工具类站点RPM $5-12（AdRevHub 2025基准），SEO长尾流量6-12个月开始起量"
+    },
+    {
+      "criterion": "全局：自动化程度",
+      "metric": "三条轨道搭建完成后，每周总维护时间≤2小时",
+      "source": "用户约束：每天1-2小时用于搭建，搭建完成后每周1-2小时维护"
+    },
+    {
+      "criterion": "全局：月运营成本",
+      "metric": "总月成本≤¥200（含API调用+域名续费分摊）",
+      "source": "用户预算上限¥2000/月，目标控制在10%以内即¥200"
+    }
+  ],
+  "design_decisions": [
+    {
+      "topic": "方案选择：A+B还是单方案",
+      "chosen": "方案A（三线并进）+方案C（内容矩阵）合并执行，共3条轨道",
+      "reason": "用户希望同时推进多个项目分散风险，A和C在内容管线部分重叠可复用",
+      "auto_selected": false
+    },
+    {
+      "topic": "技术栈选择",
+      "chosen": "Python（爬虫/AI管线）+ 原生HTML/CSS/JS（工具站）+ Coze（AI智能体）",
+      "reason": "用户会写Python脚本，原生前端最轻量无需框架学习成本，Coze零代码",
+      "auto_selected": true
+    },
+    {
+      "topic": "部署平台",
+      "chosen": "Cloudflare Pages（静态站）+ GitHub Actions或VPS cron（定时任务）",
+      "reason": "Cloudflare Pages免费且全球CDN加速，GitHub Actions免费额度充足（2000分钟/月）",
+      "auto_selected": true
+    },
+    {
+      "topic": "AI模型选择",
+      "chosen": "智谱GLM-4.6或DeepSeek API",
+      "reason": "国产模型价格极低（¥1-2/百万token），中文能力强，API稳定",
+      "auto_selected": true
+    },
+    {
+      "topic": "是否做海外市场",
+      "chosen": "内容站和工具站面向国内+海外双语，闲鱼仅国内",
+      "reason": "AdSense海外流量RPM远高于国内，双语内容可同时捕获两个市场",
+      "auto_selected": true
+    },
+    {
+      "topic": "爬虫定时任务方案",
+      "chosen": "GitHub Actions（免费）或用户自备VPS的cron",
+      "reason": "若用户有VPS则用cron（更灵活），否则GitHub Actions定时触发（免费）",
+      "auto_selected": true
+    },
+    {
+      "topic": "内容平台分发渠道",
+      "chosen": "静态聚合站（主）+ 掘金/知乎（辅），暂不做微信公众号",
+      "reason": "微信公众号AI内容审核趋严有封号风险，掘金/知乎对技术内容友好，静态站无平台风险",
+      "auto_selected": true
+    }
+  ],
+  "open_questions": [
+    {
+      "question": "用户是否有VPS/服务器可以24小时运行爬虫定时任务？",
+      "impact": "medium",
+      "note": "如无VPS则使用GitHub Actions替代，不影响核心功能"
+    },
+    {
+      "question": "工具站是否需要用户系统（登录/收藏/历史记录）？",
+      "impact": "low",
+      "note": "根据轻量化原则建议初期不做，纯匿名使用，后续按需添加"
+    }
+  ],
+  "references": [
+    {
+      "title": "Micro SaaS Ideas Without API Dependency (2026)",
+      "url": "https://bigideasdb.com/micro-saas-no-api-dependency",
+      "key_takeaway": "浏览器端工具（PDF处理、文件转换）有$4K-$15K/月潜力，核心卖点是隐私（文件不上传服务器）"
+    },
+    {
+      "title": "The 12 Python Mini-Tools I Built in 2025 That Now Pay My Bills",
+      "url": "https://blog.stackademic.com/the-12-python-mini-tools-i-built-in-2025-that-now-pay-my-bills-quietly-daily-and-without-stress-b4627f48aea6",
+      "key_takeaway": "12个Python小工具每月稳定带来被动收入，小而美的工具叠加效应显著"
+    },
+    {
+      "title": "闲鱼接单做定制Coze智能体，18天赚了8400元",
+      "url": "https://mp.weixin.qq.com/s?__biz=MzE5MTU1MzAxMw==&mid=2247483759&idx=1&sn=5cda2c417f1382b35366edc316728118",
+      "key_takeaway": "Coze智能体闲鱼定制是2025年验证过的变现路径，零成本、快见效、有真实收入数据支撑"
+    },
+    {
+      "title": "AdSense RPM Benchmarks 2025",
+      "url": "https://adrevhub.com/rpm-calculator/",
+      "key_takeaway": "工具类站点RPM $5-12，内容类RPM $2-5，技术/教程类RPM $5-12。金融类RPM最高但内容生产门槛也高"
+    },
+    {
+      "title": "一人公司月入16万：微型SaaS的金矿",
+      "url": "http://mp.weixin.qq.com/s?__biz=MzkyOTg4MDExNg==&mid=2247483931&idx=1&sn=d5bd9b59317fe501d11ab0c4429cf196",
+      "key_takeaway": "国内独立开发者真实案例：一个简单插件实现月入16万，验证了'小工具+大市场'的可行性"
+    },
+    {
+      "title": "国内个人开发者赚钱项目2025真实收入汇总",
+      "url": "https://www.e-com-net.com/article/2051924507223973888.htm",
+      "key_takeaway": "五大变现赛道（AI工具/小程序/内容矩阵/工具站/RPA）均有真实案例，'一人公司+AI全链路'是2025核心趋势"
+    },
+    {
+      "title": "我怎么用Claude做了个工具站赚买菜钱",
+      "url": "https://juejin.cn/post/7576459005390520363",
+      "key_takeaway": "程序员用Claude生成代码+Cloudflare Pages部署工具站，日收入$1.5起步持续增长，验证极低成本工具站模式"
+    }
+  ]
+}
