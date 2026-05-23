@@ -23,14 +23,13 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
-        run: pip install requests jinja2
+        run: pip install requests jinja2 beautifulsoup4
 
       - name: Run pipeline
         working-directory: track2-content-pipeline
         run: python pipeline.py
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          AI_API_URL: ${{ secrets.AI_API_URL }}
 
       - name: Deploy to GitHub Pages
         if: success()
