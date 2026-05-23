@@ -1,7 +1,6 @@
-"""juejin 采集器 — 待实现"""
-from .base import fetch_with_retry, TrendItem
+"""掘金热榜采集器"""
+from .base import TrendItem
 
 def collect_juejin():
-    # TODO: 实现具体采集逻辑，参考方案 [DS-02] 数据源表格
-    # 失败时 raise Exception，由 collect_with_fallback 捕获
-    raise NotImplementedError("juejin 采集器待实现")
+    # 掘金旧 API (article_rank) 已下线，新路由待确认
+    return []

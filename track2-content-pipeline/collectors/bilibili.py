@@ -1,7 +1,17 @@
-"""bilibili 采集器 — 待实现"""
-from .base import fetch_with_retry, TrendItem
+"""B站热门采集器"""
+from .base import fetch_with_retry, TrendItem, HEADERS
 
 def collect_bilibili():
-    # TODO: 实现具体采集逻辑，参考方案 [DS-02] 数据源表格
-    # 失败时 raise Exception，由 collect_with_fallback 捕获
-    raise NotImplementedError("bilibili 采集器待实现")
+    url = "https://api.bilibili.com/x/web-interface/popular?ps=20"
+    headers = {**HEADERS, 'Referer': 'https://www.bilibili.com/'}
+    resp = fetch_with_retry(url, headers=headers)
+    data = resp.json()
+    items = []
+    for entry in data.get("data", {}).get("list", [])[:20]:
+        items.append(TrendItem(
+            title=entry.get("title", ""),
+            url=f"https://www.bilibili.com/video/{entry.get('bvid', '')}",
+            platform="B站",
+            hot_score=entry.get("stat", {}).get("view", 0),
+        ))
+    return items

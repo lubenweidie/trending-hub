@@ -1,9 +1,10 @@
 """微博热搜采集器"""
-from .base import fetch_with_retry, TrendItem
+from .base import fetch_with_retry, TrendItem, HEADERS
 
 def collect_weibo():
     url = "https://weibo.com/ajax/side/hotSearch"
-    resp = fetch_with_retry(url)
+    headers = {**HEADERS, 'Referer': 'https://weibo.com/', 'X-Requested-With': 'XMLHttpRequest'}
+    resp = fetch_with_retry(url, headers=headers)
     data = resp.json()
     items = []
     for entry in data.get("data", {}).get("realtime", [])[:20]:
