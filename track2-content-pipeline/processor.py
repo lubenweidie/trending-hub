@@ -2,15 +2,33 @@
 import json
 import os
 import hashlib
+import time
+import requests
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # 成本控制
 COST_LOG = Path("logs/daily_tokens.json")
 MONTHLY_BUDGET_YUAN = 150
 ALERT_THRESHOLD_YUAN = 120
 TOKEN_PRICE = 0.001 / 1000  # ¥1/百万token
+
+# DeepSeek API 配置
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_URL = os.environ.get("AI_API_URL", "https://api.deepseek.com/v1/chat/completions")
+AI_ENABLED = bool(DEEPSEEK_API_KEY)
+
+BATCH_SUMMARIZE_PROMPT = """你是一个热点新闻摘要助手。以下是从不同平台采集的热点话题列表。
+请为每个话题写一句简洁、客观的摘要（15-30字），说明事件核心内容。
+只陈述已知事实，不要猜测、不要标题党、不要煽动情绪。
+如果话题信息不足以判断内容，写"暂无详细信息"。
+
+返回格式（JSON数组）：
+[{"title": "原标题", "summary": "你的摘要"}, ...]
+
+热点列表：
+"""
 
 def load_frequency_words() -> set:
     """加载过滤关键词"""
@@ -50,25 +68,94 @@ def check_budget() -> bool:
         print(f"[BUDGET] 月度消耗¥{cost:.1f}已达告警线¥{ALERT_THRESHOLD_YUAN}")
     return True
 
-def process_trends(all_results: Dict[str, List], budget_ok: bool = True):
-    """主处理入口"""
-    # 合并所有采集结果
-    all_items = []
-    for platform, items in all_results.items():
-        for item in items:
-            item_dict = item.__dict__ if hasattr(item, '__dict__') else item
-            item_dict["platform"] = platform
-            all_items.append(item_dict)
+def log_tokens(tokens: int):
+    """记录单次消耗"""
+    COST_LOG.parent.mkdir(parents=True, exist_ok=True)
+    logs = []
+    if COST_LOG.exists():
+        logs = json.loads(COST_LOG.read_text(encoding="utf-8"))
+    logs.append({
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "tokens": tokens
+    })
+    COST_LOG.write_text(json.dumps(logs, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 去重+过滤
-    filtered = filter_trends(all_items)
-    print(f"[PROCESS] 原始{len(all_items)}条 → 过滤后{len(filtered)}条")
 
-    if not budget_ok:
-        # 降级模式：不调用AI，原文标题+链接
-        return [{"title": it["title"], "summary": "", "source_url": it.get("url", ""),
-                 "platform": it.get("platform", "")} for it in filtered]
+def summarize_batch(items: List[Dict]) -> Dict[str, str]:
+    """批量调用 DeepSeek API 生成摘要，返回 {title: summary} 映射"""
+    if not AI_ENABLED or not items:
+        return {}
 
-    # TODO: 正常模式调用 AI API 做摘要+改写
-    # 具体Prompt模板见方案 [DS-02]
-    return filtered
+    # 构建批量请求
+    titles = [it["title"] for it in items]
+    titles_json = json.dumps(titles, ensure_ascii=False)
+
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "你是一个专业的新闻摘要助手。请严格按JSON格式返回结果。"},
+            {"role": "user", "content": BATCH_SUMMARIZE_PROMPT + titles_json}
+        ],
+        "max_tokens": 60 * len(items),  # 每条约60 token
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"}
+    }
+
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                DEEPSEEK_API_URL,
+                headers={
+                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json=payload,
+                timeout=90
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                usage = data.get("usage", {}).get("total_tokens", 0)
+                log_tokens(usage)
+
+                content = data["choices"][0]["message"]["content"]
+                result_list = json.loads(content)
+                return {r["title"]: r.get("summary", "") for r in result_list if "title" in r}
+
+            if resp.status_code == 429:
+                print(f"[AI] 速率限制，等待 {(attempt+1)*10}s...")
+                time.sleep((attempt + 1) * 10)
+                continue
+
+            print(f"[AI] API错误 {resp.status_code}: {resp.text[:200]}")
+            if attempt < 2:
+                time.sleep(3)
+
+        except Exception as e:
+            print(f"[AI] 请求异常: {e}")
+            if attempt < 2:
+                time.sleep(5)
+
+    return {}
+
+
+def summarize_items(items: List[Dict], batch_size: int = 10) -> List[Dict]:
+    """为条目列表添加 AI 摘要，分批处理"""
+    if not AI_ENABLED:
+        print("[AI] 未配置 DEEPSEEK_API_KEY，跳过摘要生成")
+        return items
+
+    print(f"[AI] 开始为 {len(items)} 条生成摘要...")
+    result = []
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i + batch_size]
+        summaries = summarize_batch(batch)
+        for item in batch:
+            item = dict(item)
+            item["summary"] = summaries.get(item["title"], "")
+            result.append(item)
+        if i + batch_size < len(items):
+            time.sleep(1)  # 批次间短暂休息
+        print(f"[AI] 进度: {min(i + batch_size, len(items))}/{len(items)}")
+
+    print(f"[AI] 摘要生成完成")
+    return result
