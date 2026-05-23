@@ -24,5 +24,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# 运行时产出（本地保留，不提交）
+output/
+logs/
+
 # 备份（本地保留，不提交）
 output-backup-*/
