@@ -26,107 +26,95 @@ def load_config():
     return {}
 
 
-def opencli(cmd: str, check: bool = True) -> subprocess.CompletedProcess:
-    """执行 opencli 命令"""
-    full_cmd = f"opencli browser {SESSION} {cmd}"
-    print(f"  $ {full_cmd}")
-    result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=120)
+def sh_run(cmd: str, timeout: int = 120) -> subprocess.CompletedProcess:
+    """执行 shell 命令，强制 UTF-8 编码"""
+    return subprocess.run(
+        cmd, shell=True, capture_output=True,
+        encoding="utf-8", errors="replace",
+        timeout=timeout
+    )
+
+
+def opencli(cmd: str, check: bool = True, cmd_extra: str = "") -> subprocess.CompletedProcess:
+    """执行 opencli browser 命令"""
+    if cmd_extra:
+        full_cmd = f"opencli browser {SESSION} {cmd} {cmd_extra}"
+    else:
+        full_cmd = f"opencli browser {SESSION} {cmd}"
+    print(f"  $ opencli browser {SESSION} {cmd}")
+    result = sh_run(full_cmd)
     if check and result.returncode != 0:
-        print(f"  [stderr] {result.stderr.strip()[:300]}")
-    if result.stdout.strip():
-        print(f"  [out] {result.stdout.strip()[:500]}")
+        err = (result.stderr or "").strip()[:300]
+        if err:
+            print(f"  [stderr] {err}")
+    out = (result.stdout or "").strip()
+    if out:
+        print(f"  [out] {out[:500]}")
     return result
 
 
 def ensure_daemon():
     """确保 opencli daemon 在运行"""
-    r = subprocess.run("opencli daemon status", shell=True, capture_output=True, text=True)
-    if "running" not in r.stdout:
+    r = sh_run("opencli daemon status")
+    if "running" not in (r.stdout or ""):
         print("[Setup] 启动 opencli daemon...")
-        subprocess.run("opencli daemon restart", shell=True)
+        sh_run("opencli daemon restart")
 
 
 def check_extension() -> bool:
     """检查 Browser Bridge 扩展是否已连接"""
-    r = subprocess.run("opencli doctor 2>&1", shell=True, capture_output=True, text=True)
-    if "Extension: connected" in r.stdout:
+    r = sh_run("opencli doctor")
+    if "Extension: connected" in (r.stdout or ""):
         return True
     print("[Setup] Browser Bridge 扩展未连接，请在 Chrome 中加载扩展")
     return False
 
 
 def open_editor() -> bool:
-    """打开百家号图文编辑页"""
+    """打开百家号图文编辑页并初始化编辑器"""
     print("\n[1/4] 打开编辑页...")
-    r = opencli(f"open {BJH_EDIT_URL}", check=False)
+    opencli(f"open {BJH_EDIT_URL}", check=False)
     opencli("wait time 3")
-    # 检查是否跳转到登录页（说明未登录）
+
+    # 检查是否跳转到登录页
     r = opencli("state", check=False)
-    if "login" in r.stdout.lower() or "登录" in r.stdout:
+    stdout = (r.stdout or "").lower()
+    if "login" in stdout or "登录" in stdout:
         print("[Error] 未登录百家号，请先在 Chrome 中登录 https://baijiahao.baidu.com/")
         return False
+
+    # 点击侧边栏"图文"以初始化编辑器
+    print("  初始化编辑器...")
+    opencli("eval", check=False,
+            cmd_extra='(()=>{var els=document.querySelectorAll("*");'
+                      'for(var i=0;i<els.length;i++){var e=els[i];'
+                      'if(e.innerText==="图文"&&e.children.length===0){e.click();return"clicked"}}'
+                      'return"not found"})()')
+    opencli("wait time 3")
     return True
 
 
 def fill_article(title: str, content: str) -> bool:
     """填写标题和正文"""
+    print("\n[2/4] 填写内容...")
 
-    # --- 获取页面元素 ---
-    print("\n[2/4] 查找页面元素...")
-    r = opencli("state", check=False)
-
-    # 尝试找标题输入框
-    print("  填写标题...")
-    title_selectors = [
-        'input[placeholder*="标题"]',
-        '[class*="title"] input',
-    ]
-    for sel in title_selectors:
-        r = opencli(f'find "{sel}"', check=False)
-        if "matches_n" in r.stdout and '"matches_n":0' not in r.stdout:
-            opencli(f'click "{sel}"', check=False)
-            opencli(f'type "{sel}" "{title[:30]}"', check=False)
-            print(f"  标题已填写: {title[:30]}")
-            break
-    else:
-        # fallback: 尝试直接 type
-        print("  [fallback] 尝试 keyboard 方式...")
-        opencli('keys Tab', check=False)
-        opencli(f'keys "{title[:30]}"', check=False)
+    # 标题：第一个 text input
+    print(f"  标题: {title[:30]}")
+    opencli('click input[type="text"]', check=False)
+    opencli(f'fill input[type="text"] "{title[:30]}"', check=False)
 
     opencli("wait time 1")
 
-    # --- 填写正文 ---
-    print("  填写正文...")
-    body_selectors = [
-        '[contenteditable="true"]',
-        '.ql-editor',
-        '[class*="editor"]',
-    ]
-    for sel in body_selectors:
-        r = opencli(f'find "{sel}"', check=False)
-        if "matches_n" in r.stdout and '"matches_n":0' not in r.stdout:
-            # 清空后填入
-            opencli(f'click "{sel}"', check=False)
-            opencli("keys Control+a", check=False)
-            # 正文可能较长，用 type 分段
-            paragraphs = content.split("\n")
-            for p in paragraphs[:3]:  # 先填前3段
-                if p.strip():
-                    opencli(f'type "{sel}" "{p.strip()[:200]}"', check=False)
-                    opencli("keys Enter", check=False)
-            print(f"  正文已填写 ({len(content)} 字)")
-            break
-    else:
-        print("  [fallback] 未找到编辑器，尝试 eval 方式...")
-        # 用 JS eval 直接设置
-        js = (
-            "(()=>{"
-            "const ed=document.querySelector('[contenteditable=true]');"
-            "if(ed)ed.innerHTML=arguments[0];"
-            "})()"
-        )
-        opencli(f'eval "{js}"', check=False)
+    # 正文：contenteditable div
+    print(f"  正文: {len(content)} 字")
+    opencli('click [contenteditable="true"]', check=False)
+    opencli("keys Control+a", check=False)
+    # 分段填入
+    for p in content.split("\n")[:5]:
+        if p.strip():
+            opencli(f'type [contenteditable="true"] "{p.strip()[:300]}"', check=False)
+            opencli("keys Enter", check=False)
+    print("  内容已填写")
 
     opencli("wait time 2")
     return True
@@ -136,36 +124,27 @@ def publish_article(mode: str = "draft") -> bool:
     """发布或存草稿"""
     print(f"\n[3/4] {'存草稿' if mode == 'draft' else '发布'}...")
 
-    if mode == "draft":
-        btn_selectors = [
-            'button:text("存草稿")',
-            'button:text("保存草稿")',
-            ':text("存草稿")',
-        ]
-        for sel in btn_selectors:
-            r = opencli(f'find "{sel}"', check=False)
-            if "matches_n" in r.stdout and '"matches_n":0' not in r.stdout:
-                opencli(f'click "{sel}"', check=False)
-                print("  已点击「存草稿」")
-                break
-        else:
-            opencli("screenshot /tmp/bjh_draft.png", check=False)
-            print("  [warn] 未找到草稿按钮，截图保存到 /tmp/bjh_draft.png")
-            return False
-    else:
-        r = opencli('click button:text("发布")', check=False)
-        print("  已点击「发布」")
+    btn_text = "存草稿" if mode == "draft" else "发布"
+    js_click = (
+        f'Array.from(document.querySelectorAll("button"))'
+        f'.find(b=>b.innerText.trim()==="{btn_text}").click();'
+        f'"clicked {btn_text}"'
+    )
+    opencli("eval", check=False, cmd_extra=js_click)
 
     opencli("wait time 5")
+    print(f"  已点击「{btn_text}」")
     return True
 
 
 def verify_published() -> bool:
-    """验证是否发布成功"""
-    print("\n[4/4] 验证结果...")
+    """验证结果"""
+    print("\n[4/4] 验证...")
     r = opencli("state", check=False)
-    if "err" in r.stdout.lower() or "错误" in r.stdout:
+    out_lower = (r.stdout or "").lower()
+    if "err" in out_lower or "错误" in out_lower:
         opencli("screenshot /tmp/bjh_error.png", check=False)
+        print("  可能有错误，截图已保存")
         return False
     print("  完成")
     return True
