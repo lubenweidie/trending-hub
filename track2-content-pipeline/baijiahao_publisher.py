@@ -1,4 +1,4 @@
-"""百家号图文发布：Playwright 扫码登录 + Cookie 持久化 + 自动发布"""
+"""百家号图文发布：Playwright 账号密码登录 + Cookie 持久化 + 自动发布"""
 import json
 import os
 import sys
@@ -68,14 +68,21 @@ def cookie_auth(cookie_file: str) -> bool:
             browser.close()
 
 
-def generate_cookie(cookie_file: str):
-    """打开浏览器，等待用户扫码登录，自动检测完成并保存 Cookie"""
+def generate_cookie(cookie_file: str, account: dict):
+    """使用账号密码登录百家号，自动检测完成并保存 Cookie"""
     from playwright.sync_api import sync_playwright
 
+    phone = account.get("phone", "")
+    password = account.get("password", "")
+
+    if not phone or not password or phone.startswith("在此填写"):
+        print("[Login] 请先在 baijiahao_config.json 中填写手机号和密码")
+        print("[Login] 转用备用方案：打开浏览器手动登录...")
+        return _generate_cookie_manual(cookie_file)
+
     print("\n" + "=" * 50)
-    print("  请在打开的浏览器中完成扫码登录")
-    print("  用百度 App 扫描页面上的二维码")
-    print("  登录成功后会自动检测并保存 Cookie")
+    print("  使用账号密码登录百家号...")
+    print(f"  手机号: {phone[:3]}****{phone[-4:]}")
     print("=" * 50 + "\n")
 
     with sync_playwright() as p:
@@ -83,44 +90,183 @@ def generate_cookie(cookie_file: str):
         context = browser.new_context(locale="zh-CN")
         page = context.new_page()
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
-        print("[Login] 已打开登录页，请扫码...")
+        page.wait_for_timeout(2000)
 
-        # 轮询检测登录状态：最长等 5 分钟
-        max_wait = 300
+        # --- 切换到账号密码登录 ---
+        try:
+            # 百家号使用百度统一登录页，有多个tab
+            # 可能的切换方式：点击"账号登录" / "密码登录" / "短信登录"之外的tab
+            tabs_to_try = [
+                "text=账号登录",
+                "text=密码登录",
+                "text=账号密码登录",
+                "[data-type='password']",
+                ".pass-tab-account",
+                ".tab-item:has-text('账号')",
+            ]
+            for selector in tabs_to_try:
+                try:
+                    el = page.query_selector(selector)
+                    if el and el.is_visible():
+                        el.click()
+                        print(f"[Login] 切换到密码登录")
+                        page.wait_for_timeout(1000)
+                        break
+                except:
+                    continue
+        except Exception as e:
+            print(f"[Login] 切换登录方式跳过: {e}")
+
+        page.wait_for_timeout(1000)
+
+        # --- 填写手机号 ---
+        phone_selectors = [
+            'input[placeholder*="手机"]',
+            'input[placeholder*="账号"]',
+            'input[placeholder*="用户名"]',
+            'input[name="phone"]',
+            'input[name="account"]',
+            'input[name="userName"]',
+            'input[type="text"]',
+        ]
+        phone_filled = False
+        for sel in phone_selectors:
+            try:
+                el = page.query_selector(sel)
+                if el and el.is_visible():
+                    el.click()
+                    el.fill("")
+                    el.fill(phone)
+                    phone_filled = True
+                    print(f"[Login] 已填写手机号")
+                    break
+            except:
+                continue
+
+        if not phone_filled:
+            print("[Login] 未找到手机号输入框，尝试手动...")
+
+        page.wait_for_timeout(500)
+
+        # --- 填写密码 ---
+        pwd_selectors = [
+            'input[placeholder*="密码"]',
+            'input[name="password"]',
+            'input[type="password"]',
+        ]
+        for sel in pwd_selectors:
+            try:
+                el = page.query_selector(sel)
+                if el and el.is_visible():
+                    el.click()
+                    el.fill("")
+                    el.fill(password)
+                    print(f"[Login] 已填写密码")
+                    break
+            except:
+                continue
+
+        page.wait_for_timeout(500)
+
+        # --- 点击登录 ---
+        login_btn_selectors = [
+            "button:text('登录')",
+            "button:text('登 录')",
+            "input[value='登录']",
+            "[class*='login'] button",
+            ".pass-button-submit",
+        ]
+        for sel in login_btn_selectors:
+            try:
+                btn = page.query_selector(sel)
+                if btn and btn.is_visible():
+                    btn.click()
+                    print("[Login] 已点击登录按钮")
+                    break
+            except:
+                continue
+
+        # --- 自动检测登录结果 ---
+        max_wait = 120  # 最长等2分钟（含可能的验证码时间）
+        captcha_detected = False
         for i in range(max_wait):
             time.sleep(1)
             current_url = page.url
-            # 登录成功后通常会跳转到创作者主页
-            if "/builder/rc/home" in current_url or "/builder/rc/" in current_url:
-                if "login" not in current_url:
-                    print(f"\n[Login] 检测到登录成功！（{i+1}s）")
-                    break
-            # 备用：检查页面是否去掉了登录按钮
-            try:
-                login_btn = page.query_selector("a:has-text('注册/登录')")
-                if not login_btn or not login_btn.is_visible():
-                    page.goto(HOME_URL, wait_until="domcontentloaded", timeout=10000)
-                    page.wait_for_timeout(3000)
-                    if "/builder/rc/home" in page.url and "login" not in page.url:
-                        print(f"\n[Login] 检测到登录成功！（{i+1}s）")
-                        break
-            except:
-                pass
+
+            # 检测是否登录成功
+            if ("/builder/rc/home" in current_url or "/builder/rc/" in current_url) \
+                    and "login" not in current_url:
+                print(f"\n[Login] 登录成功！（{i+1}s）")
+                break
+
+            # 检测验证码/滑块
+            if not captcha_detected:
+                captcha_indicators = [
+                    "验证码",
+                    "滑块",
+                    "请点击",
+                    "拖动",
+                    "安全验证",
+                    "passMod",
+                    "captcha",
+                    "spider",
+                ]
+                try:
+                    page_text = page.content()
+                    for indicator in captcha_indicators:
+                        if indicator.lower() in page_text.lower():
+                            print(f"\n[Login] 检测到可能的验证码，请在浏览器中手动完成...")
+                            captcha_detected = True
+                            break
+                except:
+                    pass
         else:
-            print("\n[Login] 等待超时，尝试保存当前 Cookie...")
+            print("\n[Login] 等待超时，保存当前 Cookie（可能为已登录状态）...")
 
         context.storage_state(path=cookie_file)
         print(f"[Login] Cookie 已保存到: {cookie_file}")
         browser.close()
 
 
-def ensure_auth(cookie_file: str):
-    """确保已登录：Cookie 有效则复用，否则引导扫码"""
+def _generate_cookie_manual(cookie_file: str):
+    """备用方案：打开浏览器让用户手动登录"""
+    from playwright.sync_api import sync_playwright
+
+    print("\n" + "=" * 50)
+    print("  手动登录模式：请在浏览器中自行登录")
+    print("  登录成功后程序会自动检测并保存 Cookie")
+    print("=" * 50 + "\n")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context(locale="zh-CN")
+        page = context.new_page()
+        page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+        print("[Login] 已打开登录页...")
+
+        max_wait = 300
+        for i in range(max_wait):
+            time.sleep(1)
+            current_url = page.url
+            if ("/builder/rc/home" in current_url or "/builder/rc/" in current_url) \
+                    and "login" not in current_url:
+                print(f"\n[Login] 检测到登录成功！（{i+1}s）")
+                break
+        else:
+            print("\n[Login] 等待超时，保存当前 Cookie...")
+
+        context.storage_state(path=cookie_file)
+        print(f"[Login] Cookie 已保存到: {cookie_file}")
+        browser.close()
+
+
+def ensure_auth(cookie_file: str, account: dict = None):
+    """确保已登录：Cookie 有效则复用，否则用账号密码登录"""
     if os.path.exists(cookie_file) and cookie_auth(cookie_file):
         return True
 
-    print("[Auth] 需要登录百家号")
-    generate_cookie(cookie_file)
+    print("[Auth] Cookie 不存在或已失效，使用账号密码登录...")
+    generate_cookie(cookie_file, account or {})
     return True
 
 
@@ -280,7 +426,8 @@ def run(article_path: str = None, mode: str = None, cookie_file: str = None):
 
     # Step 1: 登录
     print("\n[1/3] 验证登录状态...")
-    ensure_auth(cookie_file)
+    account = cfg.get("account", {})
+    ensure_auth(cookie_file, account)
 
     # Step 2: 找文章
     print("\n[2/3] 查找待发布文章...")
@@ -324,7 +471,7 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--file", help="指定文章文件路径（不指定则用最新一篇）")
     parser.add_argument("-m", "--mode", choices=["draft", "publish"], default="draft",
                         help="发布模式：draft=存草稿, publish=立即发布")
-    parser.add_argument("--login", action="store_true", help="强制重新扫码登录")
+    parser.add_argument("--login", action="store_true", help="强制重新登录（删除旧Cookie）")
     args = parser.parse_args()
 
     cookie_file = get_cookie_path()

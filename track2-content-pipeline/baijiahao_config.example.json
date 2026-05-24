@@ -1,9 +1,9 @@
 {
-    "_说明": "百家号账号配置。此文件包含敏感信息，请勿提交到 Git！",
+    "_说明": "百家号账号配置模板。复制为 baijiahao_config.json 并填写你的信息。",
 
     "account": {
-        "phone": "在此填写你的百家号手机号",
-        "password": "在此填写你的百家号密码"
+        "phone": "13800138000",
+        "password": "your_password"
     },
 
     "cookie_file": "auth/baijiahao_cookies.json",
