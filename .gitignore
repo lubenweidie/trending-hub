@@ -24,6 +24,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# 百家号配置（本地保留）
+track2-content-pipeline/baijiahao_config.json
+
 # 运行时产出（本地保留，不提交）
 output/
 logs/
