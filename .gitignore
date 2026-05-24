@@ -28,10 +28,5 @@ Thumbs.db
 output/
 logs/
 
-# 百家号 Cookie 和配置（含密码，不提交）
-auth/
-track2-content-pipeline/auth/
-track2-content-pipeline/baijiahao_config.json
-
 # 备份（本地保留，不提交）
 output-backup-*/
