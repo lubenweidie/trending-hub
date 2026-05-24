@@ -28,5 +28,9 @@ Thumbs.db
 output/
 logs/
 
+# 百家号 Cookie（敏感，不提交）
+auth/
+track2-content-pipeline/auth/
+
 # 备份（本地保留，不提交）
 output-backup-*/
