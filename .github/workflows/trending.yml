@@ -32,18 +32,24 @@ jobs:
         run: python pipeline.py
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ARTICLE_LIMIT: 1
 
       - name: Deploy to GitHub Pages
         if: success()
         run: |
           cp track2-content-pipeline/output/index.html /tmp/index.html
+          mkdir -p /tmp/articles
+          cp track2-content-pipeline/output/articles/*.md /tmp/articles/ 2>/dev/null || true
+          cp track2-content-pipeline/output/articles/*.txt /tmp/articles/ 2>/dev/null || true
           git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
           git rm -rf --cached . 2>/dev/null || true
           rm -rf ./* 2>/dev/null || true
           cp /tmp/index.html .
+          mkdir -p articles
+          cp /tmp/articles/* articles/ 2>/dev/null || true
           git config user.name "TrendBot"
           git config user.email "bot@trends.local"
-          git add index.html
+          git add index.html articles/ 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "No changes, skip commit"
           else
