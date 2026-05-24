@@ -69,13 +69,13 @@ def cookie_auth(cookie_file: str) -> bool:
 
 
 def generate_cookie(cookie_file: str):
-    """打开浏览器，等待用户扫码登录，保存 Cookie"""
+    """打开浏览器，等待用户扫码登录，自动检测完成并保存 Cookie"""
     from playwright.sync_api import sync_playwright
 
     print("\n" + "=" * 50)
     print("  请在打开的浏览器中完成扫码登录")
-    print("  1. 用百度 App 扫描页面上的二维码")
-    print("  2. 登录成功后，回到终端按 Enter 继续")
+    print("  用百度 App 扫描页面上的二维码")
+    print("  登录成功后会自动检测并保存 Cookie")
     print("=" * 50 + "\n")
 
     with sync_playwright() as p:
@@ -85,8 +85,29 @@ def generate_cookie(cookie_file: str):
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
         print("[Login] 已打开登录页，请扫码...")
 
-        # 等待用户手动登录
-        input(">>> 登录完成后按 Enter 保存 Cookie... ")
+        # 轮询检测登录状态：最长等 5 分钟
+        max_wait = 300
+        for i in range(max_wait):
+            time.sleep(1)
+            current_url = page.url
+            # 登录成功后通常会跳转到创作者主页
+            if "/builder/rc/home" in current_url or "/builder/rc/" in current_url:
+                if "login" not in current_url:
+                    print(f"\n[Login] 检测到登录成功！（{i+1}s）")
+                    break
+            # 备用：检查页面是否去掉了登录按钮
+            try:
+                login_btn = page.query_selector("a:has-text('注册/登录')")
+                if not login_btn or not login_btn.is_visible():
+                    page.goto(HOME_URL, wait_until="domcontentloaded", timeout=10000)
+                    page.wait_for_timeout(3000)
+                    if "/builder/rc/home" in page.url and "login" not in page.url:
+                        print(f"\n[Login] 检测到登录成功！（{i+1}s）")
+                        break
+            except:
+                pass
+        else:
+            print("\n[Login] 等待超时，尝试保存当前 Cookie...")
 
         context.storage_state(path=cookie_file)
         print(f"[Login] Cookie 已保存到: {cookie_file}")
@@ -200,8 +221,8 @@ def publish_article(title: str, content: str, mode: str = "draft",
                     draft_btn.click()
                     print("[Publish] 已点击「存草稿」")
                 else:
-                    print("[Publish] 未找到草稿按钮，请在浏览器中手动操作")
-                    input(">>> 操作完成后按 Enter...")
+                    print("[Publish] 未找到草稿按钮，等待 10s 后继续...")
+                    page.wait_for_timeout(10000)
             else:
                 publish_btn = page.query_selector(
                     "button:text('发布'), "
@@ -212,8 +233,8 @@ def publish_article(title: str, content: str, mode: str = "draft",
                     publish_btn.click()
                     print("[Publish] 已点击「发布」")
                 else:
-                    print("[Publish] 未找到发布按钮，请在浏览器中手动操作")
-                    input(">>> 操作完成后按 Enter...")
+                    print("[Publish] 未找到发布按钮，等待 10s 后继续...")
+                    page.wait_for_timeout(10000)
 
             page.wait_for_timeout(5000)
 
@@ -223,8 +244,8 @@ def publish_article(title: str, content: str, mode: str = "draft",
                 ".passMod_dialog-container"
             )
             if captcha and captcha.is_visible():
-                print("[Publish] ⚠️ 出现安全验证，请手动完成")
-                input(">>> 完成后按 Enter...")
+                print("[Publish] 出现安全验证，等待 15s...")
+                page.wait_for_timeout(15000)
 
             # 保存最新的 cookie
             context.storage_state(path=cookie_file)
