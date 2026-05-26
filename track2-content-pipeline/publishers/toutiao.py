@@ -120,8 +120,43 @@ class ToutiaoPublisher(BasePublisher):
             cmd_extra=clean, check=False)
         time.sleep(0.5)
 
-        if r.returncode != 0:
-            # Step 2: eval fallback
+        # Step 2: 验证标题是否完整填入
+        verify_js = (
+            "(function(){"
+            f"var el=document.querySelector('{TITLE_SELECTORS}');"
+            "if(!el)return'no_el';"
+            "var v=(el.value||el.innerText||el.textContent||'');"
+            "return'len:'+v.length;"
+            "})()"
+        )
+        rv = self.opencli("eval", check=False, noisy=False, cmd_extra=verify_js)
+        vout = (rv.stdout or "").strip()
+        expected_len = len(clean)
+        # 用 eval fallback 重试（直接通过 nativeInputSetter 设置 value + dispatch 事件）
+        if f"len:{expected_len}" not in vout:
+            print(f"  标题未完整填入 ({vout})，使用 eval 重试...")
+            js = (
+                "(function(){"
+                f"var sel='{TITLE_SELECTORS}';"
+                "var el=document.querySelector(sel);"
+                "if(!el)return'no_title_el';"
+                "el.focus();el.click();"
+                "if(el.tagName==='INPUT'||el.tagName==='TEXTAREA'){"
+                "var nativeInputSetter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;"
+                f"nativeInputSetter.call(el,{escaped});"
+                "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                "el.dispatchEvent(new Event('change',{bubbles:true}));"
+                "}else{"
+                "el.innerText=" + escaped + ";"
+                "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                "}"
+                "return'filled:'+(el.value||el.innerText||'').substring(0,30);"
+                "})()"
+            )
+            r = self.opencli("eval", check=False, cmd_extra=js)
+            print(f"  eval retry: {(r.stdout or '').strip()[:80]}")
+        elif r.returncode != 0:
+            # Step 3: fill 失败时也用 eval fallback
             js = (
                 "(function(){"
                 f"var sel='{TITLE_SELECTORS}';"
@@ -178,7 +213,8 @@ class ToutiaoPublisher(BasePublisher):
         ))
         time.sleep(0.3)
 
-        # Step 1: execCommand 快速填入全部正文
+        # Step 1: 先 dispatch beforeinput（React 17+ 通过此事件感知即将发生的 DOM 变更）
+        #         再 execCommand 写入正文，最后 dispatch input 让 React 同步内部状态
         escaped = json.dumps(clean, ensure_ascii=False)
         js = (
             f"{FIND_EL_JS}"
@@ -187,10 +223,25 @@ class ToutiaoPublisher(BasePublisher):
             "if(!el)return'no_content_el';"
             "el.focus();"
             "var doc=el.ownerDocument||document;"
+            # 设置光标到末尾
+            "var sl=window.getSelection();"
+            "var r=doc.createRange();r.selectNodeContents(el);r.collapse(false);"
+            "sl.removeAllRanges();sl.addRange(r);"
+            # dispatch beforeinput（告诉 React：即将有文本插入）
+            "try{el.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:" + escaped + "}));}catch(e){}"
+            # 执行真正的 DOM 写入
             "doc.execCommand('selectAll',false,null);"
             "doc.execCommand('insertText',false," + escaped + ");"
-            "try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:" + escaped + "}));}catch(e){el.dispatchEvent(new Event('input',{bubbles:true}));}"
+            # dispatch input（告诉 React：文本已变更，请更新内部状态）
+            "try{el.dispatchEvent(new InputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:" + escaped + "}));}catch(e){el.dispatchEvent(new Event('input',{bubbles:true}));}"
             "el.dispatchEvent(new Event('change',{bubbles:true}));"
+            # Step 2: 在末尾插入一个可见字符然后删除，触发原生的 beforeinput/input 管道
+            #         确保 React 的合成事件系统真正处理了变更
+            "var txt=doc.createTextNode('X');"
+            "r=doc.createRange();r.setStartAfter(el.lastChild||el);r.collapse(true);"
+            "sl.removeAllRanges();sl.addRange(r);"
+            "doc.execCommand('insertText',false,'X');"
+            "doc.execCommand('delete',false,null);"
             "var t=(el.innerText||el.textContent||'');"
             "return'content:'+t.substring(0,40)+' len:'+t.length;"
             "})()"
@@ -198,26 +249,22 @@ class ToutiaoPublisher(BasePublisher):
         r = self.opencli("eval", check=False, cmd_extra=js)
         result = (r.stdout or "").strip()
         print(f"  execCommand: {result[:120]}")
-        time.sleep(0.3)
-
-        # Step 2: opencli fill 键入2个触发字符 → 激活 React onChange + 自动保存
-        # 注：execCommand 直接改 DOM，React 内部状态可能滞后。
-        #     用 fill 键入少量字符让 React 感知编辑区内容变化，触发状态同步。
-        trigger_text = "​"  # zero-width space, avoids visible artifacts
-        self.opencli(
-            f'fill "{CONTENT_SELECTORS}" --nth 0',
-            cmd_extra=trigger_text, check=False, timeout=30)
+        time.sleep(0.5)
 
         # Step 3: 等待自动保存（头条 auto-save 通常 3-5 秒完成）
         print(f"  等待自动保存...")
         saved = False
-        for wait_i in range(8):
+        for wait_i in range(12):
             time.sleep(1)
             check_js = (
                 "(function(){"
                 "var body=document.body.innerText||'';"
                 "var m=body.match(/共\\s*(\\d+)\\s*字/);"
                 "if(m&&parseInt(m[1])>10)return'saved:'+m[0];"
+                # 兜底：检查编辑器内是否真的有内容
+                + self._find_content_el_js() +
+                "var t=(el?el.innerText||el.textContent||'':'');"
+                "if(t.length>100)return'has_content:'+t.length+'chars';"
                 "return'waiting';"
                 "})()"
             )
@@ -227,10 +274,14 @@ class ToutiaoPublisher(BasePublisher):
                 print(f"  自动保存完成: {save_status}")
                 saved = True
                 break
-            if wait_i % 3 == 0:
+            if "has_content:" in save_status:
+                print(f"  内容已存在但未显示字数: {save_status}")
+                saved = True
+                break
+            if wait_i % 4 == 0:
                 print(f"  ... {save_status[:60]}")
         if not saved:
-            print(f"  自动保存已等待8秒，继续流程")
+            print(f"  [WARN] 自动保存未检测到，继续流程（内容可能已存在于编辑器中）")
 
         print(f"  正文已输入")
 
