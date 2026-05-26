@@ -103,21 +103,20 @@ def publish_to_platforms(platforms: list[str], mode: str = "draft"):
     # Word 存档
     export_word(article_file)
 
-    # 归档到 published/，避免后续重复发布
+    # 归档到 published/，避免后续重复发布（目录名加上发布平台）
     import shutil
-    original_stem = article_file.stem
+    article_dir = article_file.parent
+    publish_platform = "-".join(platforms)
+    new_name = f"{article_dir.name}-{publish_platform}"
+    new_path = article_dir.parent / new_name
+    article_dir.rename(new_path)
+    article_dir = new_path
     published_dir = OUTPUT_DIR / "published"
     published_dir.mkdir(exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M")
-    archived = published_dir / f"{ts}_{article_file.name}"
-    article_file.rename(archived)
-    img_dir = OUTPUT_DIR / "images" / original_stem
-    if img_dir.exists():
-        img_dest = published_dir / "images" / original_stem
-        if img_dest.exists():
-            shutil.rmtree(str(img_dest))
-        img_dest.parent.mkdir(exist_ok=True)
-        shutil.move(str(img_dir), str(img_dest))
+    archived = published_dir / article_dir.name
+    if archived.exists():
+        shutil.rmtree(str(archived))
+    shutil.move(str(article_dir), str(archived))
     print(f"[归档] {archived.name}")
 
     return success
@@ -128,10 +127,15 @@ def main():
     parser = argparse.ArgumentParser(description="一键发布到多平台")
     parser.add_argument("-p", "--platforms", default="",
                         help="目标平台（逗号分隔，如: baijiahao,toutiao）")
+    parser.add_argument("--publish", action="store_true",
+                        help="立即发布（默认存草稿）")
     args = parser.parse_args()
 
-    # 发布模式：只从 apikeys.conf 读取
-    mode = _publish_mode()
+    # 发布模式：--publish 标志 > 环境变量 PUBLISH_MODE=2 > apikeys.conf
+    if args.publish:
+        mode = "publish"
+    else:
+        mode = _publish_mode()
 
     # 平台列表
     platforms_env = os.environ.get("PUBLISH_PLATFORMS", "")

@@ -139,7 +139,7 @@ class BasePublisher(ABC):
     @staticmethod
     def find_latest_article(source_dir: str = "") -> Path | None:
         d = source_dir or str(OUTPUT_DIR)
-        pattern = os.path.join(d, "*.md")
+        pattern = os.path.join(d, "*", "*.md")
         files = glob.glob(pattern)
         return Path(max(files, key=os.path.getmtime)) if files else None
 
@@ -206,7 +206,7 @@ class BasePublisher(ABC):
     @staticmethod
     def find_article_images(article_path: Path) -> dict:
         slug = article_path.stem
-        img_dir = article_path.parent / "images" / slug
+        img_dir = article_path.parent
         if not img_dir.exists():
             return {"cover": None, "inline": []}
 
@@ -260,27 +260,16 @@ class BasePublisher(ABC):
         if not source_url:
             return ""
         print(f"\n[提取] 提取源页面正文...")
-        self.opencli(f"open {source_url}", check=False, timeout=60)
-        time.sleep(4)
 
-        # 搜索/列表页不跳外链（跳转目标不可控，容易跑到无关页面）
+        # 搜索/列表页直接跳过 open（容易超时且内容无意义），用摘要兜底
         is_listing = any(kw in source_url for kw in (
             "s?word=", "s?wd=", "s?tn=", "m.baidu.com/s?", "/weibo?", "s.weibo.com/weibo"))
         if is_listing:
-            print(f"  搜索/列表页，尝试提取页面摘要...")
-            # 先尝试直接从当前页面提取（看有没有相关摘要文本）
-            r = self.opencli("extract --chunk-size 2000", check=False, timeout=30)
-            content = (r.stdout or "").strip()
-            if content:
-                lines = content.split("\n")
-                cleaned = [l for l in lines if not l.startswith("{") and not l.startswith("[out]")]
-                content = "\n".join(cleaned).strip()
-            # 搜索页通常提取不到有效正文，返回空让上层用摘要
-            if len(content) < MIN_SOURCE_CONTENT:
-                print(f"  搜索页有效内容不足 ({len(content)} 字)，将使用摘要扩写")
-                return ""
-            print(f"  提取到 {len(content)} 字符")
-            return content[:max_chars]
+            print(f"  搜索/列表页，跳过源页面提取，将使用摘要扩写")
+            return ""
+
+        self.opencli(f"open {source_url}", check=False, timeout=60)
+        time.sleep(4)
 
         r = self.opencli(f"extract --chunk-size {max_chars}", check=False, timeout=60)
         content = (r.stdout or "").strip()
@@ -452,11 +441,12 @@ class BasePublisher(ABC):
         # Step 0: 源内容提取 + AI扩写 + 配图
         source_url = self.parse_source_url(article_file)
         platform = self.parse_source_platform(article_file)
-        image_dir = article_file.parent / "images"
+        image_dir = article_file.parent
 
         pre_images = self.find_article_images(article_file)
         cover_image = pre_images["cover"]
         images = list(pre_images["inline"])
+        enriched = None
 
         if source_url and not self.is_bilibili_source(article_file) and len(article.get("content", "")) < MIN_ARTICLE_CONTENT:
             source_content = self.extract_source_content(source_url)
@@ -475,33 +465,19 @@ class BasePublisher(ABC):
                 if enriched:
                     article = enriched
                     self._save_enriched_article(article_file, article)
-                if not pre_images["cover"] and not pre_images["inline"]:
-                    # 优先从源页面抓图（原文配图最精准）
-                    images = self.collect_images_from_source(source_url, image_dir)
-                    if images:
-                        print(f"\n[配图] 源页面采集到 {len(images)} 张图片")
-                    if not images:
-                        # 源页面无图 → 关键词搜图兜底
-                        keywords = enriched.get("image_keywords", "") if enriched else ""
-                        if keywords:
-                            print(f"\n[配图] 源页面无图，用中文标题搜图: {article.get('title', '')[:30]}")
-                            from image_search import get_images_for_article
-                            result = get_images_for_article(
-                                article.get("title", "")[:30], article_file.stem, article_file.parent,
-                                count=3, fallback_query=keywords)
-                            if result["cover"]:
-                                cover_image = result["cover"]
-                            images = list(result["inline"])
             else:
                 print(f"\n[扩写] 无可用素材（源页面+摘要均为空），跳过扩写")
-            if not pre_images["cover"] and not pre_images["inline"] and not images:
-                images = self.collect_images_from_source(source_url, image_dir)
-        elif not pre_images["cover"] and not pre_images["inline"]:
-            if self.is_bilibili_source(article_file):
-                print(f"\n[跳过] 来源为B站视频，不适合提取正文/截图，使用原始文章")
-                images = self.collect_images_from_source(source_url, image_dir)
-            elif source_url:
-                images = self.collect_images_from_source(source_url, image_dir)
+
+        if not pre_images["cover"] and not pre_images["inline"] and not images:
+            keywords = enriched.get("image_keywords", "") if (enriched and isinstance(enriched, dict)) else ""
+            print(f"\n[配图] 百度/Bing搜图: {article.get('title', '')[:30]}")
+            from image_search import get_images_for_article
+            result = get_images_for_article(
+                article.get("title", "")[:30], article_file.stem, article_file.parent,
+                count=3, fallback_query=keywords)
+            if result["cover"]:
+                cover_image = result["cover"]
+            images = list(result["inline"])
 
         if pre_images["cover"] or pre_images["inline"]:
             print(f"\n[配图] 使用预下载图片: 封面={'有' if cover_image else '无'}, 配图{len(images)}张")

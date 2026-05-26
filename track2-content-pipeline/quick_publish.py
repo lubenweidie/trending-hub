@@ -61,21 +61,20 @@ def main():
         status = "成功" if ok else "失败"
         print(f"[{name}] {status}")
 
-    # 归档
-    from datetime import datetime
+    # 归档（目录名加上发布平台）
     import shutil
+    article_dir = article_file.parent
+    publish_platform = "-".join(platforms)
+    new_name = f"{article_dir.name}-{publish_platform}"
+    new_path = article_dir.parent / new_name
+    article_dir.rename(new_path)
+    article_dir = new_path
     published_dir = HERE / "output" / "articles" / "published"
     published_dir.mkdir(exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M")
-    archived = published_dir / f"{ts}_{article_file.name}"
-    article_file.rename(archived)
-    img_dir = HERE / "output" / "articles" / "images" / article_file.stem
-    if img_dir.exists():
-        img_dest = published_dir / "images" / article_file.stem
-        if img_dest.exists():
-            shutil.rmtree(str(img_dest))
-        img_dest.parent.mkdir(exist_ok=True)
-        shutil.move(str(img_dir), str(img_dest))
+    archived = published_dir / article_dir.name
+    if archived.exists():
+        shutil.rmtree(str(archived))
+    shutil.move(str(article_dir), str(archived))
     print(f"[归档] {archived.name}")
 
 

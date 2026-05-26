@@ -8,10 +8,14 @@ def collect_weibo():
     data = resp.json()
     items = []
     for entry in data.get("data", {}).get("realtime", [])[:20]:
+        word = entry.get("word", "")
+        scheme = entry.get("scheme", "")
+        url = scheme if scheme else f"https://s.weibo.com/weibo?q={word}"
         items.append(TrendItem(
-            title=entry.get("word", ""),
-            url=f"https://s.weibo.com/weibo?q={entry.get('word', '')}",
+            title=word,
+            url=url,
             platform="微博",
             hot_score=entry.get("num", 0),
+            raw_data={"note": entry.get("note", ""), "category": entry.get("category", "")},
         ))
     return items

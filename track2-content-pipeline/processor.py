@@ -20,12 +20,12 @@ DEEPSEEK_API_URL = os.environ.get("AI_API_URL") or "https://api.deepseek.com/v1/
 AI_ENABLED = bool(DEEPSEEK_API_KEY)
 
 BATCH_SUMMARIZE_PROMPT = """你是一个热点新闻摘要助手。以下是从不同平台采集的热点话题列表。
-请为每个话题写一句简洁、客观的摘要（15-30字），说明事件核心内容。
+请为每个话题写一段客观、信息丰富的摘要（50-100字），说明事件的核心事实、关键数据和背景。
 只陈述已知事实，不要猜测、不要标题党、不要煽动情绪。
 如果话题信息不足以判断内容，写"暂无详细信息"。
 
-返回格式（JSON数组）：
-[{"title": "原标题", "summary": "你的摘要"}, ...]
+返回格式（JSON对象）：
+{"results": [{"title": "原标题", "summary": "你的摘要"}, ...]}
 
 热点列表：
 """
@@ -96,7 +96,7 @@ def summarize_batch(items: List[Dict]) -> Dict[str, str]:
             {"role": "system", "content": "你是一个专业的新闻摘要助手。请严格按JSON格式返回结果。"},
             {"role": "user", "content": BATCH_SUMMARIZE_PROMPT + titles_json}
         ],
-        "max_tokens": 60 * len(items),  # 每条约60 token
+        "max_tokens": 150 * len(items),  # 每条约150 token，确保50-100字中文摘要
         "temperature": 0.3,
         "response_format": {"type": "json_object"}
     }
@@ -118,7 +118,8 @@ def summarize_batch(items: List[Dict]) -> Dict[str, str]:
                 log_tokens(usage)
 
                 content = data["choices"][0]["message"]["content"]
-                result_list = json.loads(content)
+                result_obj = json.loads(content)
+                result_list = result_obj.get("results", [])
                 return {r["title"]: r.get("summary", "") for r in result_list if "title" in r}
 
             if resp.status_code == 429:

@@ -96,8 +96,20 @@ class ToutiaoPublisher(BasePublisher):
         clean = title.strip()
         # 头条标题要求 5-30 字符（不足补全，超出截断）
         if len(clean) > 30:
-            clean = clean[:30]
-            print(f"  标题截断至30字: {clean[:50]}")
+            # 在自然断点处截断：优先句末标点 → 分句标点 → 空格 → 硬截
+            breaks = '。！？；，、：」"'
+            best = 30
+            for br in breaks:
+                pos = clean.rfind(br, 20, 30)
+                if pos > best - 3:
+                    best = pos + 1
+                    break
+            if best == 30:
+                space_pos = clean.rfind(' ', 20, 30)
+                if space_pos > 24:
+                    best = space_pos
+            clean = clean[:best].rstrip('，,；;、：: ')
+            print(f"  标题截断至{len(clean)}字: {clean[:50]}")
         elif len(clean) < 5:
             clean = clean + "：深度解析与观察"
             clean = clean[:30]
@@ -667,6 +679,31 @@ class ToutiaoPublisher(BasePublisher):
             r_d2 = self.opencli("eval", check=False, noisy=False, cmd_extra=diag2_js)
             print(f"  按钮: {(r_d2.stdout or '').strip()[:200]}")
             return False
+
+        # Step 1.5: 如果有「预览并定时发布」，先点它（头条新两步流程）
+        step1_5_js = (
+            "(function(){"
+            "var all=document.querySelectorAll('button');"
+            "for(var i=0;i<all.length;i++){"
+            "var b=all[i];"
+            "if(b.offsetParent===null||b.disabled)continue;"
+            "var t=(b.innerText||'').trim();"
+            "if(t.indexOf('预览并定时发布')!==-1||t.indexOf('预览与定时发布')!==-1){"
+            "b.focus();"
+            "b.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));"
+            "b.click();"
+            "return'clicked:'+t;"
+            "}"
+            "}"
+            "return'no_step1_5';"
+            "})()"
+        )
+        time.sleep(2)
+        r1_5 = self.opencli("eval", check=False, noisy=False, cmd_extra=step1_5_js)
+        out1_5 = (r1_5.stdout or "").strip()
+        if "clicked" in out1_5:
+            print(f"  Step1.5 点击预览并定时发布: {out1_5[:80]}")
+            time.sleep(2)
 
         # Step 2: 等待并查找「确认发布」按钮（Step1 点击后应出现）
         print(f"  等待「确认发布」按钮出现...")

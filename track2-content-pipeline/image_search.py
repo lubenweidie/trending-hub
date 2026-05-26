@@ -312,11 +312,11 @@ def get_images_for_article(title: str, slug: str, output_dir: Path, count: int =
     if not images:
         return {"cover": None, "inline": []}
 
-    img_dir = output_dir / "images" / slug
-    # 清理旧图片，避免残留
+    img_dir = output_dir
+    # 清理旧图片，避免残留（仅删除图片文件，不碰 .md / .txt）
     if img_dir.exists():
         for old_file in img_dir.iterdir():
-            if old_file.is_file():
+            if old_file.is_file() and old_file.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
                 old_file.unlink()
     img_dir.mkdir(parents=True, exist_ok=True)
 

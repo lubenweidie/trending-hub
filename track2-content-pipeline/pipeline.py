@@ -1,4 +1,6 @@
-"""内容管线主入口：采集 -> 过滤 -> AI摘要 -> 生成 -> 校验"""
+"""内容管线主入口：采集 -> 过滤 -> AI摘要 -> 保存主题 -> 校验"""
+import config_loader  # noqa: E402,F401
+import subprocess
 import sys
 import os
 from pathlib import Path
@@ -9,7 +11,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from collectors.run_all import run_all
 from processor import filter_trends, check_budget, summarize_items, AI_ENABLED
 from builder import build_index
-from article_writer import generate_articles
+from article_writer import save_topics
+
+# G28: 封装条件 — 排除的源平台
+_EXCLUDED_PLATFORMS = frozenset({"bilibili", "b站"})
 
 
 def main():
@@ -31,6 +36,7 @@ def main():
                 d["platform"] = platform
             all_items.append(d)
     filtered = filter_trends(all_items)
+    filtered = [it for it in filtered if it.get("platform", "").lower() not in _EXCLUDED_PLATFORMS]
     print(f"  原始 {len(all_items)} 条 -> 过滤后 {len(filtered)} 条")
 
     # Step 3: AI 摘要
@@ -58,10 +64,10 @@ def main():
     # Step 4: AI 文章扩写（百家号）
     article_limit = int(os.environ.get("ARTICLE_LIMIT", "0"))
     if article_limit > 0 and budget_ok:
-        print(f"\n[4/6] 百家号文章扩写（每日{article_limit}篇）...")
-        generate_articles(filtered, daily_limit=article_limit)
+        print(f"\n[4/6] 保存主题（每日{article_limit}篇）...")
+        save_topics(filtered, daily_limit=article_limit)
     else:
-        print("\n[4/6] 百家号文章扩写... 跳过（ARTICLE_LIMIT=0 或预算不足）")
+        print("\n[4/6] 保存主题... 跳过（ARTICLE_LIMIT=0 或预算不足）")
 
     # Step 5: 生成 HTML
     print("\n[5/6] 生成 HTML...")
@@ -69,7 +75,6 @@ def main():
 
     # Step 6: 校验
     print("\n[6/6] 校验 HTML...")
-    import subprocess
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent / "validate_output.py")],
         capture_output=True, text=True

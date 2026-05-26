@@ -1,6 +1,5 @@
 """主入口：串行调用所有采集器，互不阻断"""
 import time
-import random
 from typing import Dict, List
 from .base import collect_with_fallback, TrendItem
 
@@ -14,14 +13,14 @@ def _safe_import(module_name):
 def run_all() -> Dict[str, List[TrendItem]]:
     results = {}
 
-    # 微博（最稳定，先跑）
+    # 微博
     try:
         from . import weibo
         results["weibo"] = collect_with_fallback("weibo", weibo.collect_weibo)
     except Exception as e:
         print(f"[SKIP] weibo: {e}")
         results["weibo"] = []
-    time.sleep(random.uniform(1, 3))
+    time.sleep(0.5)
 
     # 知乎
     try:
@@ -30,7 +29,7 @@ def run_all() -> Dict[str, List[TrendItem]]:
     except Exception as e:
         print(f"[SKIP] zhihu: {e}")
         results["zhihu"] = []
-    time.sleep(random.uniform(1, 3))
+    time.sleep(0.5)
 
     # 百度
     try:
@@ -39,16 +38,10 @@ def run_all() -> Dict[str, List[TrendItem]]:
     except Exception as e:
         print(f"[SKIP] baidu: {e}")
         results["baidu"] = []
-    time.sleep(random.uniform(1, 3))
+    time.sleep(0.5)
 
-    # B站
-    try:
-        from . import bilibili
-        results["bilibili"] = collect_with_fallback("bilibili", bilibili.collect_bilibili)
-    except Exception as e:
-        print(f"[SKIP] bilibili: {e}")
-        results["bilibili"] = []
-    time.sleep(random.uniform(1, 3))
+    # B站 — 已禁用
+    results["bilibili"] = []
 
     # 掘金
     try:
@@ -57,7 +50,7 @@ def run_all() -> Dict[str, List[TrendItem]]:
     except Exception as e:
         print(f"[SKIP] juejin: {e}")
         results["juejin"] = []
-    time.sleep(random.uniform(1, 3))
+    time.sleep(0.5)
 
     # V2EX
     try:

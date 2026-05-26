@@ -1,151 +1,104 @@
-"""百家号文章扩写模块：热点摘要 → 300-500字原创文章"""
-import json
-import os
-import time
-import requests
+"""热点主题筛选与保存 —— 不在此阶段做 AI 扩写，扩写统一在发布时由 ENRICH_PROMPT 完成"""
+import config_loader  # noqa: E402,F401
+import random
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict
 
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_API_URL = os.environ.get("AI_API_URL") or "https://api.deepseek.com/v1/chat/completions"
-AI_ENABLED = bool(DEEPSEEK_API_KEY)
 OUTPUT_DIR = Path("output/articles")
+PUBLISHED_DIR = OUTPUT_DIR / "published"
 
-ARTICLE_PROMPT = """你是一位专业的自媒体作者。请根据以下热点信息，撰写一篇300-500字的原创短文，适合发布在百家号等内容平台。
-
-要求：
-1. 标题要有吸引力但不过度夸张（15-25字），与原标题有差异化
-2. 正文结构：开篇引入背景（1-2句）→ 核心内容陈述（3-4句）→ 补充细节或影响（1-2句）→ 收尾
-3. 语言客观、事实性，不煽动情绪、不标题党
-4. 必须是原创表达，不要直接复制任何来源的原句
-5. 不添加个人评论，只陈述事实
-
-热点信息：
-标题：{title}
-摘要：{summary}
-来源平台：{platform}
-
-返回JSON格式：
-{{"title": "改写后的标题", "content": "正文内容（纯文本，用\\n分段）"}}
-"""
+# G25: 命名常量替代魔法数字
+MIN_TITLE_LENGTH = 5
+MAX_TITLE_LENGTH = 80
+EMPTY_SUMMARY_MARKER = "暂无详细信息"
 
 
-def select_best_items(items: List[Dict], max_count: int = 2) -> List[Dict]:
-    candidates = []
-    for item in items:
-        summary = item.get("summary", "")
-        title = item.get("title", "")
-        if not summary or summary == "暂无详细信息":
+def _published_source_urls() -> set:
+    urls: set[str] = set()
+    if not PUBLISHED_DIR.exists():
+        return urls
+    for f in PUBLISHED_DIR.glob("*/*.md"):
+        text = f.read_text(encoding="utf-8")
+        m = re.search(r'原文：\[.*?\]\((https?://[^)]+)\)', text)
+        if m:
+            urls.add(m.group(1))
+    return urls
+
+
+def _extract_url(topic: Dict) -> str:
+    return topic.get("source_url") or topic.get("url", "")
+
+
+def select_best_items(topics: List[Dict], max_count: int = 2) -> List[Dict]:
+    published_urls = _published_source_urls()
+    # 按平台分组，每个平台取摘要最长的一条，保证来源多样性
+    platform_best: dict[str, tuple[int, Dict]] = {}
+    for topic in topics:
+        summary = topic.get("summary", "")
+        title = topic.get("title", "")
+        if not summary or summary == EMPTY_SUMMARY_MARKER:
             continue
-        if len(title) < 5 or len(title) > 80:
+        if len(title) < MIN_TITLE_LENGTH or len(title) > MAX_TITLE_LENGTH:
             continue
+        url = _extract_url(topic)
+        if url and url in published_urls:
+            continue
+        platform = topic.get("platform", "unknown")
         score = len(summary)
-        candidates.append((score, item))
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return [item for _, item in candidates[:max_count]]
+        if platform not in platform_best or score > platform_best[platform][0]:
+            platform_best[platform] = (score, topic)
+
+    diverse_pool = [topic for _, topic in platform_best.values()]
+    if not diverse_pool:
+        return []
+
+    selected = random.sample(diverse_pool, min(max_count, len(diverse_pool)))
+    if len(selected) == 1 and len(diverse_pool) > 1:
+        picked = selected[0]
+        platforms = [t.get('platform','?') for t in diverse_pool]
+        print(f"[TopicSaver] 平台分层筛选: 候选平台 {platforms} → 随机选中: {picked.get('platform','')} · {picked['title'][:30]}...")
+    return selected
 
 
-def write_article(item: Dict) -> Dict | None:
-    if not AI_ENABLED:
-        return None
-
-    prompt = ARTICLE_PROMPT.format(
-        title=item.get("title", ""),
-        summary=item.get("summary", ""),
-        platform=item.get("platform", "")
-    )
-
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": "你是一个专业的自媒体内容创作者，擅长撰写原创、客观的热点文章。"},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 800,
-        "temperature": 0.7,
-        "response_format": {"type": "json_object"}
-    }
-
-    for attempt in range(3):
-        try:
-            resp = requests.post(
-                DEEPSEEK_API_URL,
-                headers={
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=90
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                return json.loads(content)
-            if resp.status_code == 429:
-                print(f"[ArticleWriter] 速率限制，等待 {(attempt+1)*10}s...")
-                time.sleep((attempt + 1) * 10)
-                continue
-            print(f"[ArticleWriter] API错误 {resp.status_code}: {resp.text[:200]}")
-            if attempt < 2:
-                time.sleep(3)
-        except Exception as e:
-            print(f"[ArticleWriter] 请求异常: {e}")
-            if attempt < 2:
-                time.sleep(5)
-    return None
-
-
-def save_article(article: Dict, index: int, source_item: Dict):
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    title = article.get("title", "无标题")
-    content = article.get("content", "")
-
-    date_str = datetime.now().strftime("%Y%m%d")
-    slug = f"{date_str}-{index:02d}"
+def save_topic(topic: Dict, index: int) -> str:
+    title = topic.get("title", "无标题")
+    summary = topic.get("summary", "")
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    safe_title = re.sub(r'[\\/:*?"<>|]', '', title)[:30].strip()
+    slug = f"{safe_title}-{ts}"
+    article_dir = OUTPUT_DIR / slug
+    article_dir.mkdir(parents=True, exist_ok=True)
+    source_url = _extract_url(topic)
 
     md_content = f"""# {title}
 
-> 来源：{source_item.get('platform', '')} | 原文：[{source_item.get('title', '')}]({source_item.get('source_url', '')})
+> 来源：{topic.get('platform', '')} | 原文：[{topic.get('title', '')}]({source_url})
 > 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}
+> 摘要：{summary}
 
-{content}
+（发布时基于源内容 AI 扩写）
 """
-    (OUTPUT_DIR / f"{slug}.md").write_text(md_content, encoding="utf-8")
-
-    txt_path = OUTPUT_DIR / f"{slug}.txt"
-    txt_path.write_text(f"{title}\n\n{content}", encoding="utf-8")
-
-    print(f"[ArticleWriter] 已保存: {slug}")
+    (article_dir / f"{slug}.md").write_text(md_content, encoding="utf-8")
+    print(f"[TopicSaver] 已保存: {slug}")
     return slug
 
 
-def generate_articles(items: List[Dict], daily_limit: int = 2) -> List[str]:
-    if not AI_ENABLED:
-        print("[ArticleWriter] 未配置 AI API Key，跳过文章生成")
-        return []
-
-    print(f"[ArticleWriter] 从 {len(items)} 条热点中筛选 {daily_limit} 条...")
-    selected = select_best_items(items, daily_limit)
+def save_topics(topics: List[Dict], daily_limit: int = 2) -> List[str]:
+    print(f"[TopicSaver] 从 {len(topics)} 条热点中筛选 {daily_limit} 条...")
+    selected = select_best_items(topics, daily_limit)
 
     if not selected:
-        print("[ArticleWriter] 无适合扩写的热点，跳过")
+        print("[TopicSaver] 无适合扩写的热点，跳过")
         return []
 
-    print(f"[ArticleWriter] 选中 {len(selected)} 条，开始扩写...")
-
+    print(f"[TopicSaver] 选中 {len(selected)} 条，保存主题...")
     slugs = []
-    for i, item in enumerate(selected):
-        print(f"[ArticleWriter]   ({i+1}/{len(selected)}) {item['title'][:40]}...")
-        article = write_article(item)
-        if article:
-            slug = save_article(article, i + 1, item)
-            slugs.append(slug)
-        else:
-            print(f"[ArticleWriter]   扩写失败，跳过")
-        if i < len(selected) - 1:
-            time.sleep(1)
+    for i, topic in enumerate(selected):
+        print(f"[TopicSaver]   ({i+1}/{len(selected)}) {topic['title'][:40]}...")
+        slug = save_topic(topic, i + 1)
+        slugs.append(slug)
 
-    print(f"[ArticleWriter] 完成：生成 {len(slugs)} 篇文章")
+    print(f"[TopicSaver] 完成：保存 {len(slugs)} 个主题")
     return slugs
