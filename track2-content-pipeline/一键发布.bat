@@ -1,4 +1,4 @@
-﻿﻿@echo off
+﻿﻿﻿@echo off
 chcp 65001 >nul
 cd /d "%~dp0"
 
@@ -16,6 +16,11 @@ if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" set CHROME=%LOCAL
 if defined CHROME (start "" "%CHROME%") else (start "" chrome.exe)
 echo [等待] 等待浏览器就绪（5秒）...
 timeout /t 5 /nobreak >nul
+
+REM 随机延迟 0-900 秒（0-15分钟），避免机械定时
+set /a DELAY=%RANDOM% %% 900
+echo [随机] 延迟 %DELAY% 秒后开始...
+timeout /t %DELAY% /nobreak >nul
 
 python publish.py -p toutiao,baijiahao --publish
 if errorlevel 1 (
