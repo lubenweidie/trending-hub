@@ -67,7 +67,19 @@ ToutiaoPublisher().publish(article_path='output/articles/xxx.md', mode='draft')
 - `PUBLISH_MODE=2`：立即发布
 - 默认使用草稿模式
 
+## 强制使用的 Skill
+
+**调试 opencli 浏览器自动化问题前，必须先用 `/automation-debugging`**。该 skill 要求的标准流程：
+
+1. 写独立诊断脚本隔离失败步骤（每个步骤一个 eval，返回唯一标签）
+2. 在失败点 dump DOM 状态（检查 `offsetParent`、modal 层级、元素可见性）
+3. 每个 try/catch 加唯一错误标签（不要同一个 "error:" 信息）
+4. 最小化修改 + 单独验证
+
+相关 skill：`python-clean-code`、`python-testing-patterns`、`prompt-engineering-patterns`（调 AI 扩写提示词时用）
+
 ## 偏好设置
 - 发布前确认 PUBLISH_MODE=1（草稿），不要直接上线
 - 不要在不同平台发布相同文章
 - 修改代码后先跑完整流程验证，不要只看单元测试
+- 开始调试自动化问题前，先加载 automation-debugging skill
