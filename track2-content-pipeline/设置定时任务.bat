@@ -1,4 +1,4 @@
-﻿@echo off
+﻿﻿@echo off
 chcp 65001 >nul
 cd /d "%~dp0"
 
@@ -27,7 +27,7 @@ for %%T in (%TIMES%) do (
     set TASK_NAME=一键发布-!HR!!MN!
     echo [创建] !TASK_NAME! — 每天 !HR!:!MN!
 
-    schtasks /create /tn "!TASK_NAME!" /tr "\"%~dp0一键发布.bat\"" /sc daily /st !HR!:!MN!:00 /f 2>nul
+    schtasks /create /tn "!TASK_NAME!" /tr "\"%~dp0_定时启动.bat\"" /sc daily /st !HR!:!MN!:00 /f 2>nul
     if errorlevel 1 (
         echo   [FAIL] 请以管理员身份运行
         set /a FAIL+=1
