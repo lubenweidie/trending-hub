@@ -144,6 +144,14 @@ class BasePublisher(ABC):
         return Path(max(files, key=os.path.getmtime)) if files else None
 
     @staticmethod
+    def find_recent_articles(source_dir: str = "", count: int = 2) -> list:
+        d = source_dir or str(OUTPUT_DIR)
+        pattern = os.path.join(d, "*", "*.md")
+        files = glob.glob(pattern)
+        files.sort(key=os.path.getmtime, reverse=True)
+        return [Path(f) for f in files[:count]]
+
+    @staticmethod
     def parse_article(filepath: Path) -> dict:
         text = filepath.read_text(encoding="utf-8")
         lines = text.strip().split("\n")

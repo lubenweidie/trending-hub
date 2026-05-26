@@ -79,35 +79,11 @@ def export_word(article_path: Path):
     source_file.unlink(missing_ok=True)
 
 
-def publish_to_platforms(platforms: list[str], mode: str = "draft"):
-    """发布到指定平台"""
-    from publishers import REGISTRY
-
-    # 找最新文章
-    from publishers.base import BasePublisher
-    article_file = BasePublisher.find_latest_article(str(OUTPUT_DIR))
-    if not article_file:
-        print("[Exit] 没有文章")
-        return False
-
-    success = True
-    for name in platforms:
-        if name not in REGISTRY:
-            print(f"[Skip] 未知平台: {name}")
-            continue
-        pub_cls = REGISTRY[name]
-        pub = pub_cls()
-        if not pub.publish(article_path=str(article_file), mode=mode):
-            success = False
-
-    # Word 存档
-    export_word(article_file)
-
-    # 归档到 published/，避免后续重复发布（目录名加上发布平台）
+def _archive_article(article_file: Path, platform: str):
+    """归档单篇文章到 published/，追加平台后缀"""
     import shutil
     article_dir = article_file.parent
-    publish_platform = "-".join(platforms)
-    new_name = f"{article_dir.name}-{publish_platform}"
+    new_name = f"{article_dir.name}-{platform}"
     new_path = article_dir.parent / new_name
     article_dir.rename(new_path)
     article_dir = new_path
@@ -118,6 +94,42 @@ def publish_to_platforms(platforms: list[str], mode: str = "draft"):
         shutil.rmtree(str(archived))
     shutil.move(str(article_dir), str(archived))
     print(f"[归档] {archived.name}")
+
+
+def publish_to_platforms(platforms: list[str], mode: str = "draft", article_count: int = None):
+    """发布到指定平台：每平台取不同文章"""
+    from publishers import REGISTRY
+    from publishers.base import BasePublisher
+
+    count = article_count or len(platforms)
+    article_files = BasePublisher.find_recent_articles(str(OUTPUT_DIR), count=count)
+
+    if not article_files:
+        print("[Exit] 没有文章")
+        return False
+
+    print(f"\n找到 {len(article_files)} 篇文章，目标 {len(platforms)} 个平台")
+
+    success = True
+    for i, name in enumerate(platforms):
+        if i >= len(article_files):
+            print(f"[Skip] 文章不够，{name} 跳过")
+            continue
+        if name not in REGISTRY:
+            print(f"[Skip] 未知平台: {name}")
+            continue
+
+        article_file = article_files[i]
+        article = BasePublisher.parse_article(article_file)
+        print(f"\n[{name}] → {article['title'][:40]}")
+
+        pub_cls = REGISTRY[name]
+        pub = pub_cls()
+        if pub.publish(article_path=str(article_file), mode=mode):
+            export_word(article_file)
+            _archive_article(article_file, name)
+        else:
+            success = False
 
     return success
 
@@ -142,20 +154,24 @@ def main():
     plat_str = args.platforms or platforms_env or DEFAULT_PLATFORM
     platforms = [p.strip() for p in plat_str.split(",") if p.strip()]
 
+    # 文章数量：从 apikeys.conf 的 ARTICLE_LIMIT 读取
+    article_count = int(os.environ.get("ARTICLE_LIMIT", "1"))
+
     print("=" * 55)
     print(f"  一键发布 → {', '.join(platforms)}")
     print(f"  模式: {'立即发布' if mode == 'publish' else '存草稿'}")
+    print(f"  生成: {article_count} 篇")
     print("=" * 55)
 
     # Step 1: 采集 + 生成
-    print("\n[1/2] 采集热点 + AI摘要 + 生成文章...")
+    print(f"\n[1/2] 采集热点 + AI摘要 + 生成文章（{article_count}篇）...")
     if not run_pipeline():
         print("[FAIL] 管线执行失败")
         sys.exit(1)
 
     # Step 2: 多平台发布
     print(f"\n[2/2] 发布到 {len(platforms)} 个平台...")
-    publish_to_platforms(platforms, mode)
+    publish_to_platforms(platforms, mode, article_count=article_count)
 
     print("\n[OK] 全部完成")
 
