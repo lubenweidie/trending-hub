@@ -18,7 +18,6 @@ from .browser_utils import IMG_EXTRACT_JS, FIND_EL_JS
 from .image_server import start_image_server
 
 HERE = Path(__file__).parent.parent
-SESSION = "pub"
 OUTPUT_DIR = HERE / "output" / "articles"
 
 MIN_SOURCE_CONTENT = 50
@@ -31,6 +30,11 @@ class BasePublisher(ABC):
 
     platform_name: str = ""
     edit_url: str = ""
+
+    def __init__(self):
+        import os as _os
+        from datetime import datetime as _dt
+        self._session = f"{self.platform_name}-{_os.getpid()}-{_dt.now().strftime('%H%M%S')}"
 
     # ============================================================
     # 抽象方法 — 子类必须实现
@@ -95,9 +99,9 @@ class BasePublisher(ABC):
         if noisy:
             print(f"  $ {cmd}")
         if cmd_extra:
-            full_cmd = f"opencli browser {SESSION} {cmd} {self._shell_quote_win(cmd_extra)}"
+            full_cmd = f"opencli browser {self._session} {cmd} {self._shell_quote_win(cmd_extra)}"
         else:
-            full_cmd = f"opencli browser {SESSION} {cmd}"
+            full_cmd = f"opencli browser {self._session} {cmd}"
         r = self.sh_run(full_cmd, timeout=timeout)
         if check and r.returncode != 0:
             err = (r.stderr or "").strip()[:300]
