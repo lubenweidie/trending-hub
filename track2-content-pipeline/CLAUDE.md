@@ -11,9 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 文件 | 作用 |
 |------|------|
 | `pipeline.py` | 管线主入口：采集→过滤→摘要→保存主题→HTML |
-| `publish.py` | 一键发布入口：管线 + 单平台发布 + Word 存档。`--publish` 立即发布，否则存草稿 |
+| `publish.py` | 一键发布入口：管线 → 多篇文章 → 每平台分配不同文章 + Word 存档。`--publish` 立即发布，否则存草稿 |
 | `quick_publish.py` | 快捷发布：跳过管线，直接发布已有文章到指定平台 |
-| `publishers/base.py` | 发布器基类：opencli 封装、内容提取、AI 扩写、发布流程骨架 |
+| `publishers/base.py` | 发布器基类：opencli 封装、内容提取、AI 扩写、发布流程骨架、`find_recent_articles` |
 | `publishers/toutiao.py` | 今日头条发布器（mp.toutiao.com） |
 | `publishers/baijiahao.py` | 百家号发布器 |
 | `publishers/browser_utils.py` | 浏览器 JS 代码片段（图片提取、React 点击等） |
@@ -21,12 +21,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `article_writer.py` | 热点筛选 + 文章保存（基于 `published/` 源 URL 去重） |
 | `image_search.py` | 多源图片搜索（百度→Bing→Pexels→Pixabay→Unsplash） |
 | `config_loader.py` | 从 `apikeys.conf` 加载配置到 `os.environ`（只设未设置的 key） |
-| `一键发布.bat` | Windows 快捷启动：依次跑两次管线，分别发布头条和百家号 |
+| `一键发布.bat` | Windows 快捷启动：一次管线生成 N 篇，自动分配头条+百家号（**必须 UTF-8 with BOM**） |
 
 ## 常用命令
 
 ```bash
-# 一键发布（管线 + 立即发布）
+# 一键发布（管线 + 多平台，每平台不同文章）
+python publish.py -p toutiao,baijiahao --publish
+
+# 发布到单个平台
 python publish.py -p toutiao --publish
 
 # 草稿模式
@@ -35,12 +38,13 @@ python publish.py -p toutiao
 # 快捷发布已有文章（跳过管线）
 python quick_publish.py toutiao
 python quick_publish.py toutiao --publish  # 立即发布
-
-# 发布到百家号
-python publish.py -p baijiahao --publish
 ```
 
-**`一键发布.bat`** 行为：先跑 `publish.py -p toutiao --publish`，再跑 `publish.py -p baijiahao --publish`。两次独立运行，生成不同文章。
+**VSCode：** `Ctrl+Shift+B` 运行一键发布任务（`.vscode/tasks.json`）。
+
+**`一键发布.bat`** 行为：单次 `python publish.py -p toutiao,baijiahao --publish`。管线跑一次生成 N 篇（由 `apikeys.conf` 的 `ARTICLE_LIMIT` 控制），然后每平台取不同文章发布。
+
+**重要：** Windows bat 文件必须 UTF-8 with BOM 编码，否则 cmd.exe 中文乱码导致脚本解析失败。
 
 ## 文章目录结构（硬规则）
 
@@ -58,7 +62,7 @@ output/articles/
 - 目录名格式：`{safe_title}-{YYYYMMDD_HHMM}`，`safe_title` = 去非法字符 + 截断至 30 字
 - 图文一体，不分离 `images/` 子目录
 - 归档时目录名追加 `-{发布平台}`，无需额外时间戳前缀
-- `find_latest_article` 用 `*/*.md` glob 搜索子文件夹
+- `find_latest_article` 用 `*/*.md` glob 搜索子文件夹；`find_recent_articles` 返回最近 N 篇（按 mtime 降序）
 
 ## 图片策略（硬规则）
 
@@ -90,7 +94,24 @@ output/articles/
 - 搜索页直接返回空，让上层用 AI 摘要替代
 - 非搜索页才 `open` + `extract`
 
+## 配置（apikeys.conf）
+
+关键配置项：
+- `ARTICLE_LIMIT` — 每次管线生成文章数。默认 2，配合 2 平台每平台分到不同文章
+- `PUBLISH_MODE` — 1=存草稿，2=立即发布
+- `DEEPSEEK_API_KEY` — AI 摘要 + 扩写
+- 图片搜索 Key（BING_API_KEY、PEXELS_API_KEY 等）— 按优先级自动降级
+
+`config_loader.py` 只在 key 未被设置时从文件加载，环境变量优先级更高。
+
 ## 发布流程
+
+### 多平台发布（publish.py）
+
+1. 一次管线生成 N 篇文章（`ARTICLE_LIMIT`）
+2. `find_recent_articles` 取最近 N 篇
+3. 按索引分配：文章[0]→平台[0]，文章[1]→平台[1]...
+4. 每篇独立归档到 `published/{标题}-{时间戳}-{平台}/`
 
 ### 头条发布（3 步按钮流程）
 1. 点击「预览并发布」→ 预览面板出现
