@@ -510,6 +510,12 @@ class BasePublisher(ABC):
             print(f"[{self.platform_name}] 正文为空，终止发布")
             return False
 
+        # _enrich_article 中的 extract_source_content 会导航到源页面。
+        # 编辑器已打开时，必须回到编辑器页面，否则后续 fill/click 全在源页面上执行。
+        if self._editor_opened:
+            self.opencli(f"open {self.edit_url}", check=False, timeout=60)
+            time.sleep(3)
+
         # Step 1-5: 编辑器 → 标题 → 正文(图文穿插) → 封面 → 发布
         if self._editor_opened:
             print(f"[{self.platform_name}] 编辑器已就绪（串行准备阶段已打开）")
