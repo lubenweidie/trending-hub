@@ -1,35 +1,18 @@
-# 敏感文件
-.env
-*.local
-*.secret
-credentials.json
-*.pem
-*.key
-
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-.venv/
-venv/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# 百家号配置（本地保留）
-track2-content-pipeline/baijiahao_config.json
-
-# 运行时产出（本地保留，不提交）
-output/
-logs/
-
-# 备份（本地保留，不提交）
-output-backup-*/
+apikeys.json
+apikeys.conf
+accounts.json
+_account_state.json
+track2-content-pipeline/config/apikeys.conf
+track2-content-pipeline/config/accounts.json
+track2-content-pipeline/config/_account_state.json
+track2-content-pipeline/config/baijiahao_config.json
+track2-content-pipeline/logs/
+track2-content-pipeline/__pycache__/
+track2-content-pipeline/**/__pycache__/
+track2-content-pipeline/output/
+track2-content-pipeline/_screenshot.png
+track2-content-pipeline/nul
+track2-content-pipeline/.zhihu_cookie
+track2-content-pipeline/services/logs/
+track2-content-pipeline/.claude/
+track2-content-pipeline/debug/_screenshot.png
