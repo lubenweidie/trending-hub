@@ -12,7 +12,7 @@ from pathlib import Path
 _CONFIG_LOADED = False
 # 优先使用本地目录的配置文件，不存在则回退到父目录
 HERE = Path(__file__).parent.resolve()
-LOCAL_CONFIG = HERE / "apikeys.conf"
+LOCAL_CONFIG = HERE / "config" / "apikeys.conf"
 PARENT_CONFIG = HERE.parent / "apikeys.conf"
 CONFIG_PATH = LOCAL_CONFIG if LOCAL_CONFIG.exists() else PARENT_CONFIG
 

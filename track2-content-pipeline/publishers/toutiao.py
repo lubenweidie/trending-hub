@@ -1,4 +1,6 @@
 """今日头条发布器（头条号 mp.toutiao.com）"""
+import ctypes
+import ctypes.wintypes
 import json
 import re
 import time
@@ -94,6 +96,7 @@ class ToutiaoPublisher(BasePublisher):
     def fill_title(self, title: str):
         print(f"\n[2/4] 填写标题: {title[:40]}...")
         clean = title.strip()
+        self._article_title = clean  # 供 _verify_published 使用
         # 头条标题要求 5-30 字符（不足补全，超出截断）
         if len(clean) > 30:
             # 在自然断点处截断：优先句末标点 → 分句标点 → 空格 → 硬截
@@ -207,27 +210,46 @@ class ToutiaoPublisher(BasePublisher):
             "}"
         )
 
-    def fill_content(self, content: str, max_chars: int = 5000):
-        print(f"\n[3/4] 填写正文 ({len(content)}字)...")
+    def fill_content(self, content: str, max_chars: int = 5000, clear_first: bool = True):
+        print(f"\n[3/4] 填写正文 ({len(content)}字){' [追加]' if not clear_first else ''}...")
         clean = content.strip()[:max_chars]
 
-        # Step 0: 清空编辑器 + 聚焦
-        self.opencli("eval", check=False, cmd_extra=(
-            "(function(){"
-            + self._find_content_el_js() +
-            "if(!el)return'no_content_el';"
-            "el.focus();"
-            "var doc=el.ownerDocument||document;"
-            "doc.execCommand('selectAll',false,null);"
-            "doc.execCommand('delete',false,null);"
-            "return'cleared';"
-            "})()"
-        ))
-        time.sleep(0.3)
+        if clear_first:
+            # Step 0: 清空编辑器 + 聚焦
+            r_clear = self.opencli("eval", check=False, cmd_extra=(
+                "(function(){"
+                + self._find_content_el_js() +
+                "if(!el)return'no_content_el';"
+                "el.focus();"
+                "var doc=el.ownerDocument||document;"
+                "doc.execCommand('selectAll',false,null);"
+                "doc.execCommand('delete',false,null);"
+                "return'cleared';"
+                "})()"
+            ))
+            if 'no_content_el' in (r_clear.stdout or ''):
+                print(f"  [FAIL] 找不到正文编辑器，无法清空")
+                return False
+            time.sleep(0.3)
 
-        # Step 1: 先 dispatch beforeinput（React 17+ 通过此事件感知即将发生的 DOM 变更）
-        #         再 execCommand 写入正文，最后 dispatch input 让 React 同步内部状态
         escaped = json.dumps(clean, ensure_ascii=False)
+
+        if clear_first:
+            insert_js = (
+                "var r=doc.createRange();r.selectNodeContents(el);r.collapse(false);"
+                "sl.removeAllRanges();sl.addRange(r);"
+                "doc.execCommand('selectAll',false,null);"
+                "doc.execCommand('insertText',false," + escaped + ");"
+            )
+        else:
+            # 追加模式：在编辑器末尾加两个换行后插入文本，不清空已有内容
+            insert_js = (
+                "var nl=doc.createElement('div');nl.innerHTML='<br><br>';el.appendChild(nl);"
+                "var r=doc.createRange();r.setStartAfter(el.lastChild||el);r.collapse(true);"
+                "sl.removeAllRanges();sl.addRange(r);"
+                "doc.execCommand('insertText',false," + escaped + ");"
+            )
+
         js = (
             f"{FIND_EL_JS}"
             "(function(){"
@@ -235,23 +257,14 @@ class ToutiaoPublisher(BasePublisher):
             "if(!el)return'no_content_el';"
             "el.focus();"
             "var doc=el.ownerDocument||document;"
-            # 设置光标到末尾
             "var sl=window.getSelection();"
-            "var r=doc.createRange();r.selectNodeContents(el);r.collapse(false);"
-            "sl.removeAllRanges();sl.addRange(r);"
-            # dispatch beforeinput（告诉 React：即将有文本插入）
+            + insert_js +
             "try{el.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:" + escaped + "}));}catch(e){}"
-            # 执行真正的 DOM 写入
-            "doc.execCommand('selectAll',false,null);"
-            "doc.execCommand('insertText',false," + escaped + ");"
-            # dispatch input（告诉 React：文本已变更，请更新内部状态）
             "try{el.dispatchEvent(new InputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:" + escaped + "}));}catch(e){el.dispatchEvent(new Event('input',{bubbles:true}));}"
             "el.dispatchEvent(new Event('change',{bubbles:true}));"
-            # Step 2: 在末尾插入一个可见字符然后删除，触发原生的 beforeinput/input 管道
-            #         确保 React 的合成事件系统真正处理了变更
             "var txt=doc.createTextNode('X');"
-            "r=doc.createRange();r.setStartAfter(el.lastChild||el);r.collapse(true);"
-            "sl.removeAllRanges();sl.addRange(r);"
+            "var r2=doc.createRange();r2.setStartAfter(el.lastChild||el);r2.collapse(true);"
+            "sl.removeAllRanges();sl.addRange(r2);"
             "doc.execCommand('insertText',false,'X');"
             "doc.execCommand('delete',false,null);"
             "var t=(el.innerText||el.textContent||'');"
@@ -261,6 +274,9 @@ class ToutiaoPublisher(BasePublisher):
         r = self.opencli("eval", check=False, cmd_extra=js)
         result = (r.stdout or "").strip()
         print(f"  execCommand: {result[:120]}")
+        if 'no_content_el' in result:
+            print(f"  [FAIL] 找不到正文编辑器，内容未写入")
+            return False
         time.sleep(0.5)
 
         # Step 3: 等待自动保存（头条 auto-save 通常 3-5 秒完成）
@@ -296,6 +312,7 @@ class ToutiaoPublisher(BasePublisher):
             print(f"  [WARN] 自动保存未检测到，继续流程（内容可能已存在于编辑器中）")
 
         print(f"  正文已输入")
+        return True
 
     def insert_images_to_editor(self, image_paths: list):
         """粘贴图片上传 — 压缩 + 分 chunk 传参（每 chunk < 4000 字符，适配 cmd.exe 限制）"""
@@ -316,7 +333,7 @@ class ToutiaoPublisher(BasePublisher):
             if pil_img.mode in ("RGBA", "P"):
                 pil_img = pil_img.convert("RGB")
             w, h = pil_img.size
-            max_dim = 600
+            max_dim = 1200
             if w > max_dim or h > max_dim:
                 scale = min(max_dim / w, max_dim / h)
                 w, h = int(w * scale), int(h * scale)
@@ -416,24 +433,27 @@ class ToutiaoPublisher(BasePublisher):
         print(f"  图片插入完成")
 
     def set_cover_image(self, cover_path) -> bool:
+        """chunk + File injection — 确保封面尺寸 ≥ 672×462"""
+        import base64 as b64
+        from PIL import Image
+        import io
+
         if not cover_path or not cover_path.exists():
             return False
 
         print(f"\n[封面] 上传封面图: {cover_path.name}")
+        fname = cover_path.name
 
-        # Step 0: 检查是否已有封面（之前发布流程可能已设置）
+        # Step 0: 检查是否已有封面
         check_cover_js = (
             "(function(){"
-            # 检查封面预览图是否存在
             "var coverImg=document.querySelector('.article-cover-add img,.cover-image img,.article-cover img,.cover-preview img');"
             "if(coverImg&&coverImg.src&&coverImg.src.indexOf('toutiao.com')!==-1)return'has_cover';"
-            # 检查「编辑替换」按钮
             "var all=document.querySelectorAll('div,span,button');"
             "for(var i=0;i<all.length;i++){"
             "var t=(all[i].innerText||'').trim();"
             "if(t==='编辑替换'&&all[i].offsetParent!==null)return'has_cover';"
             "}"
-            # 检查单图/三图 radio
             "var radios=document.querySelectorAll('.article-cover-radio-group input[type=radio]');"
             "for(var j=0;j<radios.length;j++){"
             "if(radios[j].checked&&radios[j].value!=='0')return'has_cover_radio';"
@@ -447,10 +467,42 @@ class ToutiaoPublisher(BasePublisher):
             print(f"  封面已存在 ({check_result})，跳过上传")
             return True
 
-        img_dir = cover_path.parent
-        port = self._start_image_server(img_dir)
-        fname = cover_path.name
-        img_url = f"http://127.0.0.1:{port}/{fname}"
+        # PIL 压缩：max 1200px，min 672×462（头条推荐尺寸）
+        MIN_COVER_W, MIN_COVER_H = 672, 462
+        pil_img = Image.open(cover_path)
+        if pil_img.mode in ("RGBA", "P"):
+            pil_img = pil_img.convert("RGB")
+        w, h = pil_img.size
+        max_dim = 1200
+        if w > max_dim or h > max_dim:
+            scale = min(max_dim / w, max_dim / h)
+            w, h = int(w * scale), int(h * scale)
+            pil_img = pil_img.resize((w, h), Image.LANCZOS)
+        if w < MIN_COVER_W or h < MIN_COVER_H:
+            scale = max(MIN_COVER_W / w, MIN_COVER_H / h)
+            w, h = int(w * scale), int(h * scale)
+            pil_img = pil_img.resize((w, h), Image.LANCZOS)
+            print(f"  封面放大至: {w}x{h}（满足最小 {MIN_COVER_W}x{MIN_COVER_H}）")
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=80)
+        compressed = buf.getvalue()
+        b64_str = b64.b64encode(compressed).decode("ascii")
+        data_uri = f"data:image/jpeg;base64,{b64_str}"
+        kb = len(compressed) // 1024
+        print(f"  压缩: {w}x{h} {kb}KB → base64 {len(b64_str)//1024}KB")
+
+        # Chunk push
+        chunk_size = 4000
+        chunks = [data_uri[i:i+chunk_size] for i in range(0, len(data_uri), chunk_size)]
+        print(f"  {len(chunks)} 个 chunk...")
+        init_js = f"(function(){{window._coverChunks=[];window._coverName='{fname}';}})()"
+        self.opencli("eval", check=False, noisy=False, cmd_extra=init_js)
+        for ci, chunk in enumerate(chunks):
+            escaped_chunk = json.dumps(chunk, ensure_ascii=False)
+            push_js = f"(function(){{window._coverChunks.push({escaped_chunk});}})()"
+            self.opencli("eval", check=False, noisy=False, cmd_extra=push_js)
+            if ci % 5 == 0:
+                print(f"    chunk {ci+1}/{len(chunks)}")
 
         # Step 1: 触发封面上传弹窗
         step1_js = (
@@ -477,34 +529,61 @@ class ToutiaoPublisher(BasePublisher):
         print(f"  Step1: {(r1.stdout or '').strip()[:120]}")
         time.sleep(2.5)
 
-        # Step 1.5: 等待弹窗 .upload-image-panel 出现 → 找 file input → fiber → onFileChange → 直调
+        # Step 1.5: 等弹窗 → 注入 chunk 组装的 File → fiber onFileChange
         step15_js = (
+            f"{REACT_CLICK_JS}"
             f"(async function(){{"
             f"var R=[];function L(s){{R.push(s);}}"
             f"try{{"
-            # [1] 等待 .upload-image-panel 弹窗出现（最多等4秒）
+            # Wait for panel (多选择器，防 class 名变化)
+            f"var PANEL_SELS=['.upload-image-panel','.cover-upload-panel','.image-upload-modal',"
+            f"'[class*=upload-image]','[class*=cover-upload]','[class*=image-upload]',"
+            f"'.upload-handler','.btn-upload-handle'];"
             f"var panel=null;"
-            f"for(var w=0;w<8;w++){{"
-            f"panel=document.querySelector('.upload-image-panel');"
-            f"if(panel&&panel.offsetParent!==null)break;"
+            f"for(var w=0;w<20;w++){{"
+            f"for(var si=0;si<PANEL_SELS.length;si++){{"
+            f"try{{var p=document.querySelector(PANEL_SELS[si]);if(p&&p.offsetParent!==null){{panel=p;break;}}}}catch(e){{}}"
+            f"}}"
+            f"if(panel)break;"
             f"await new Promise(function(rr){{setTimeout(rr,500);}});"
             f"}}"
-            f"if(!panel||panel.offsetParent===null)return'ERR:no_panel waited_4s|'+R.join('|');"
+            f"if(!panel||panel.offsetParent===null){{"
+            # 面板未出现，重试触发（可能 Step1 的点击没生效）
+            f"  L('retry_trigger');"
+            f"  var ca=document.querySelector('.article-cover-add');"
+            f"  if(ca&&ca.offsetParent!==null){{ca.click();}}"
+            f"  var all=document.querySelectorAll('div,span,button');"
+            f"  for(var j=0;j<all.length;j++){{"
+            f"    var t2=(all[j].innerText||'').trim();"
+            f"    if((t2.indexOf('上传封面')!==-1||t2.indexOf('编辑替换')!==-1)&&all[j].offsetParent!==null){{all[j].click();break;}}"
+            f"  }}"
+            f"  await new Promise(function(rr){{setTimeout(rr,2000);}});"
+            f"  for(var w2=0;w2<10;w2++){{"
+            f"    for(var si2=0;si2<PANEL_SELS.length;si2++){{"
+            f"      try{{var p2=document.querySelector(PANEL_SELS[si2]);if(p2&&p2.offsetParent!==null){{panel=p2;break;}}}}catch(e){{}}"
+            f"    }}"
+            f"    if(panel)break;"
+            f"    await new Promise(function(rr){{setTimeout(rr,500);}});"
+            f"  }}"
+            f"}}"
+            f"if(!panel||panel.offsetParent===null)return'ERR:no_panel waited_10s+retry|'+R.join('|')+'|DOM:'+(document.body.innerText||'').substring(0,100);"
             f"L('1.panel_open');"
-            # [2] 下载图片
-            f"var resp=await fetch('{img_url}');"
-            f"if(!resp.ok)return'ERR:fetch '+resp.status+'|'+R.join('|');"
-            f"var blob=await resp.blob();"
-            f"var imgFile=new File([blob],'{fname}',{{type:blob.type||'image/jpeg'}});"
+            # Assemble data URI → blob → File
+            f"var dataUri=window._coverChunks.join('');delete window._coverChunks;"
+            f"var arr=dataUri.split(',');var mime=arr[0].match(/:(.*?);/)[1];"
+            f"var bstr=atob(arr[1]);var n=bstr.length;"
+            f"var u8arr=new Uint8Array(n);while(n--){{u8arr[n]=bstr.charCodeAt(n);}}"
+            f"var imgFile=new File([u8arr],window._coverName||'{fname}',{{type:mime}});"
+            f"delete window._coverName;"
             f"var dt=new DataTransfer();dt.items.add(imgFile);"
-            f"L('2.fetched');"
-            # [3] 在弹窗中找 file input
+            f"L('2.assembled');"
+            # Find file input in panel
             f"var inp=panel.querySelector('input[type=file]');"
             f"if(!inp)inp=document.querySelector('.upload-handler input[type=file],.btn-upload-handle input[type=file]');"
             f"if(!inp)inp=document.querySelector('.upload-image-panel input[type=file]');"
             f"if(!inp)return'ERR:no_inp_in_panel|'+R.join('|');"
             f"L('3.inp_ok');"
-            # [4] fiber 链找 onFileChange
+            # Fiber → onFileChange
             f"var fk=Object.keys(inp).find(function(k){{return /__react/.test(k)&&typeof inp[k]==='object';}});"
             f"if(!fk)return'ERR:no_fiber|'+R.join('|');"
             f"var fiber=inp[fk];var node=fiber;var depth=0;var handler=null;"
@@ -524,32 +603,20 @@ class ToutiaoPublisher(BasePublisher):
             f"if(handler)break;"
             f"node=node.return;depth++;"
             f"}}"
-            f"if(!handler){{"
-            f"node=fiber;depth=0;var fb=[];"
-            f"while(node&&depth<6){{"
-            f"var p=node.memoizedProps;"
-            f"if(p)fb.push('['+depth+']'+Object.keys(p).filter(function(x){{return /on|file/i.test(x);}}).join(','));"
-            f"node=node.return;depth++;"
-            f"}}"
-            f"return'ERR:no_handler '+fb.join(' > ')+'|'+R.join('|');"
-            f"}}"
+            f"if(!handler)return'ERR:no_handler|'+R.join('|');"
             f"L('4.handler:'+handler.name+'@'+handler.d);"
-            # [5] 注入文件 + 调用回调
             f"inp.files=dt.files;"
-            f"try{{handler.fn([imgFile]);L('5.ok_arr');}}catch(e1){{L('5.err_arr:'+e1.message);}}"
-            f"try{{handler.fn({{target:inp,files:dt.files,file:imgFile}});L('5.ok_obj');}}catch(e2){{L('5.err_obj:'+e2.message);}}"
-            # [6] 等待检查
+            f"try{{handler.fn([imgFile]);L('5.ok');}}catch(e1){{L('5.err:'+e1.message);}}"
             f"await new Promise(function(rr){{setTimeout(rr,800);}});"
-            f"L('6.done files@inp:'+inp.files.length);"
             f"return R.join('|');"
             f"}}catch(e){{return'ERR:'+e.message+'|'+R.join('|');}}"
             f"}})()"
         )
         r15 = self.opencli("eval", check=False, cmd_extra=step15_js)
-        print(f"  Step1.5: {(r15.stdout or '').strip()[:500]}")
+        print(f"  Step1.5: {(r15.stdout or '').strip()[:300]}")
         time.sleep(2)
 
-        # Step 2: 在弹窗内找确认按钮（限定 .upload-image-panel 范围，避免误触页面其他按钮）
+        # Step 2: 弹窗内确认
         step2_js = (
             f"{REACT_CLICK_JS}"
             "(function(){"
@@ -573,12 +640,195 @@ class ToutiaoPublisher(BasePublisher):
         time.sleep(1.5)
         return True
 
+    def _check_content_declaration(self):
+        """勾选内容声明复选框（AI生成、个人观点等），草稿和发布模式都执行"""
+        print(f"  勾选内容声明...")
+        declare_js = (
+            "(function(){"
+            "var keywords=['引用AI','AI生成','人工智能','个人观点','仅供参考','取材网络','内容声明'];"
+            "var all=document.querySelectorAll('label');"
+            "var results=[];"
+            "for(var d=0;d<keywords.length;d++){"
+            "for(var i=0;i<all.length;i++){"
+            "var t=(all[i].innerText||'').trim();"
+            "if(t.indexOf(keywords[d])!==-1){"
+            "var cb=all[i].querySelector('input[type=checkbox]');"
+            "if(cb&&!cb.checked){all[i].click();results.push('checked:'+t);}"
+            "else if(cb&&cb.checked){results.push('already:'+t);}"
+            "}"
+            "}"
+            "}"
+            "return results.length>0?results.join('|'):'no_decl_label';"
+            "})()"
+        )
+        r = self.opencli("eval", check=False, noisy=False, cmd_extra=declare_js)
+        out = (r.stdout or "").strip()
+        if out and out != 'no_decl_label':
+            print(f"  声明: {out[:200]}")
+        elif out == 'no_decl_label':
+            print(f"  声明: 未找到复选框（页面结构可能已变化）")
+        time.sleep(0.5)
+
+    @staticmethod
+    def _set_dpi_aware():
+        """确保进程 DPI 感知，否则 SetCursorPos 坐标与 Chrome 物理像素不匹配"""
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
+    def _real_click(self, button_text: str, retries: int = 3) -> str:
+        """获取按钮屏幕坐标 → Windows API 真实鼠标点击 → isTrusted:true
+        返回: 'clicked' / 'not_found' / 'pos_error'"""
+        self._set_dpi_aware()
+        text_escaped = json.dumps(button_text, ensure_ascii=False)
+
+        for attempt in range(retries):
+            if attempt > 0:
+                print(f"    真实点击重试 {attempt+1}/{retries}...")
+                time.sleep(1)
+
+            # 1. 获取按钮在屏幕上的中心坐标
+            pos_js = (
+                "(function(){"
+                "var all=document.querySelectorAll('button');"
+                "for(var i=0;i<all.length;i++){"
+                "var b=all[i];"
+                "if(!b.offsetParent||b.disabled)continue;"
+                "var t=(b.innerText||'').trim();"
+                f"if(t.indexOf({text_escaped})!==-1){{"
+                "var r=b.getBoundingClientRect();"
+                "var dpr=window.devicePixelRatio||1;"
+                "var chromeH=(window.outerHeight-window.innerHeight)*dpr;"
+                "return JSON.stringify({"
+                "sx:Math.round(window.screenX+r.x*dpr+r.width*dpr/2),"
+                "sy:Math.round(window.screenY+chromeH+r.y*dpr+r.height*dpr/2)"
+                "});"
+                "}"
+                "}"
+                "return'not_found';"
+                "})()"
+            )
+            r = self.opencli("eval", check=False, noisy=False, cmd_extra=pos_js)
+            out = (r.stdout or "").strip()
+            if out == 'not_found':
+                return 'not_found'
+
+            try:
+                pos = json.loads(out)
+            except json.JSONDecodeError:
+                print(f"    坐标解析失败: {out[:80]}")
+                continue
+
+            sx, sy = pos['sx'], pos['sy']
+            print(f"    真实点击屏幕 ({sx}, {sy})...")
+
+            # 2. Windows API: SendInput（替代弃用的 mouse_event）
+            user32 = ctypes.windll.user32
+
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+            old = POINT()
+            user32.GetCursorPos(ctypes.byref(old))
+
+            # SendInput 结构（绝对坐标映射至 0-65535 虚拟屏幕）
+            SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
+            sw = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            sh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            nx = int(sx * 65535 / sw) if sw > 0 else sx
+            ny = int(sy * 65535 / sh) if sh > 0 else sy
+
+            class MOUSEINPUT(ctypes.Structure):
+                _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long),
+                            ("mouseData", ctypes.c_ulong), ("dwFlags", ctypes.c_ulong),
+                            ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+            class INPUT(ctypes.Structure):
+                _fields_ = [("type", ctypes.c_ulong), ("mi", MOUSEINPUT)]
+
+            # 移动鼠标到目标位置（绝对坐标）
+            move = INPUT(0, MOUSEINPUT(nx, ny, 0, 0x8000 | 0x0001, 0, None))  # ABSOLUTE | MOVE
+            user32.SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
+            time.sleep(0.05)
+
+            # 按下 + 释放
+            down = INPUT(0, MOUSEINPUT(0, 0, 0, 0x0002, 0, None))  # LEFTDOWN
+            up = INPUT(0, MOUSEINPUT(0, 0, 0, 0x0004, 0, None))    # LEFTUP
+            user32.SendInput(1, ctypes.byref(down), ctypes.sizeof(INPUT))
+            time.sleep(0.03)
+            user32.SendInput(1, ctypes.byref(up), ctypes.sizeof(INPUT))
+
+            # 恢复光标
+            time.sleep(0.02)
+            user32.SetCursorPos(old.x, old.y)
+
+            return 'clicked'
+
+        return 'pos_error'
+
     def click_publish(self, mode: str = "draft"):
         print(f"\n[4/4] 发布操作 (模式: {mode})...")
 
+        # 内容声明复选框 — 无论草稿还是发布都勾选
+        self._check_content_declaration()
+
         if mode == "draft":
-            print(f"  头条号自动保存草稿，内容已填充完毕")
-            return True
+            # 等待自动保存完成，并尝试点击「保存草稿」按钮
+            print(f"  等待自动保存草稿...")
+            saved = False
+            for wait_i in range(10):
+                time.sleep(1.5)
+                check_js = (
+                    "(function(){"
+                    "var body=document.body.innerText||'';"
+                    "var m=body.match(/共\\s*(\\d+)\\s*字/);"
+                    "if(m&&parseInt(m[1])>10)return'saved:'+m[0];"
+                    + self._find_content_el_js() +
+                    "var t=(el?el.innerText||el.textContent||'':'');"
+                    "if(t.length>100)return'has_content:'+t.length+'chars';"
+                    "return'waiting';"
+                    "})()"
+                )
+                r_save = self.opencli("eval", check=False, noisy=False, cmd_extra=check_js)
+                save_status = (r_save.stdout or "").strip()
+                if "saved:" in save_status or "has_content:" in save_status:
+                    print(f"  草稿已保存: {save_status}")
+                    saved = True
+                    break
+                if wait_i % 3 == 0:
+                    print(f"  ... {save_status[:60]}")
+
+            # 尝试找「保存草稿」/「存草稿」按钮
+            draft_btn_js = (
+                "(function(){"
+                "var all=document.querySelectorAll('button');"
+                "for(var i=0;i<all.length;i++){"
+                "var b=all[i];"
+                "if(b.offsetParent===null||b.disabled)continue;"
+                "var t=(b.innerText||'').trim();"
+                "if(t.indexOf('保存草稿')!==-1||t.indexOf('存草稿')!==-1||t.indexOf('暂存')!==-1){"
+                "b.focus();"
+                "b.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));"
+                "b.click();"
+                "return'clicked:'+t;"
+                "}"
+                "}"
+                "return'no_draft_btn';"
+                "})()"
+            )
+            r_draft = self.opencli("eval", check=False, noisy=False, cmd_extra=draft_btn_js)
+            draft_out = (r_draft.stdout or "").strip()
+            if "clicked" in draft_out:
+                print(f"  已点击: {draft_out[:80]}")
+                time.sleep(2)
+                saved = True
+
+            if saved:
+                return True
+            print(f"  [WARN] 草稿保存未确认，内容可能未存入编辑器")
+            return False
 
         # Step 0.1: 等待自动保存完成
         print(f"  等待自动保存...")
@@ -600,32 +850,7 @@ class ToutiaoPublisher(BasePublisher):
                 print(f"  ... {ck}")
             time.sleep(1.5)
 
-        # Step 0.2: 勾选内容声明复选框（AI 生成内容优先勾选「引用AI」）
-        print(f"  勾选内容声明...")
-        declare_js = (
-            "(function(){"
-            "var decls=['引用AI','个人观点，仅供参考','取材网络'];"
-            "for(var d=0;d<decls.length;d++){"
-            "var all=document.querySelectorAll('label');"
-            "for(var i=0;i<all.length;i++){"
-            "var t=(all[i].innerText||'').trim();"
-            "if(t===decls[d]){"
-            "var cb=all[i].querySelector('input[type=checkbox]');"
-            "if(cb&&!cb.checked){all[i].click();return'checked:'+t;}"
-            "if(cb&&cb.checked)return'already_checked:'+t;"
-            "}"
-            "}"
-            "}"
-            "return'no_decl_label';"
-            "})()"
-        )
-        r_decl = self.opencli("eval", check=False, noisy=False, cmd_extra=declare_js)
-        decl_out = (r_decl.stdout or "").strip()
-        if decl_out:
-            print(f"  声明: {decl_out[:120]}")
-        time.sleep(0.5)
-
-        # Step 0.3: 诊断当前按钮状态
+        # Step 0.2: 诊断当前按钮状态
         diag_js = (
             "Array.from(document.querySelectorAll('button')).filter(function(b){"
             "return b.offsetParent!==null;}).map(function(b){"
@@ -637,7 +862,7 @@ class ToutiaoPublisher(BasePublisher):
         print(f"  当前可见按钮: {(r_diag.stdout or '').strip()[:250]}")
         time.sleep(0.5)
 
-        # 通用按钮查找+点击（支持多种点击策略）
+        # 通用按钮查找+点击（通过 _rc 走 React fiber 事件系统）
         find_and_click = (
             f"{REACT_CLICK_JS}"
             "(function(patterns){"
@@ -649,11 +874,9 @@ class ToutiaoPublisher(BasePublisher):
             "var t=(b.innerText||'').trim();"
             "for(var j=0;j<patterns.length;j++){"
             "if(t.indexOf(patterns[j])!==-1){"
-            # 先用原生事件（触发 React 根监听器），再 _rc 兜底
             "b.focus();"
-            "b.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));"
-            "b.click();"
-            "return'clicked:'+t;"
+            "var rcResult=_rc(b);"
+            "return'clicked:'+t+' via:'+rcResult;"
             "}"
             "}"
             "}"
@@ -669,19 +892,12 @@ class ToutiaoPublisher(BasePublisher):
         time.sleep(5)
 
         if "not_found" in out1:
-            print(f"  [WARN] 未找到预览发布按钮，检查是否是已发布状态...")
-            # 可能已经是发布中状态，查找「确认发布」
-            diag2_js = (
-                "Array.from(document.querySelectorAll('button')).filter(function(b){"
-                "return b.offsetParent!==null&&!b.disabled;}).map(function(b){"
-                "return (b.innerText||'').trim().substring(0,40);}).join('|')"
-            )
-            r_d2 = self.opencli("eval", check=False, noisy=False, cmd_extra=diag2_js)
-            print(f"  按钮: {(r_d2.stdout or '').strip()[:200]}")
+            print(f"  [WARN] 未找到预览发布按钮")
             return False
 
-        # Step 1.5: 如果有「预览并定时发布」，先点它（头条新两步流程）
+        # Step 1.5: 如果有「预览并定时发布」，先点它
         step1_5_js = (
+            f"{REACT_CLICK_JS}"
             "(function(){"
             "var all=document.querySelectorAll('button');"
             "for(var i=0;i<all.length;i++){"
@@ -690,9 +906,8 @@ class ToutiaoPublisher(BasePublisher):
             "var t=(b.innerText||'').trim();"
             "if(t.indexOf('预览并定时发布')!==-1||t.indexOf('预览与定时发布')!==-1){"
             "b.focus();"
-            "b.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));"
-            "b.click();"
-            "return'clicked:'+t;"
+            "var rcResult=_rc(b);"
+            "return'clicked:'+t+' via:'+rcResult;"
             "}"
             "}"
             "return'no_step1_5';"
@@ -705,12 +920,11 @@ class ToutiaoPublisher(BasePublisher):
             print(f"  Step1.5 点击预览并定时发布: {out1_5[:80]}")
             time.sleep(2)
 
-        # Step 2: 等待并查找「确认发布」按钮（Step1 点击后应出现）
+        # Step 2: 等待「确认发布」按钮出现 → 点击
         print(f"  等待「确认发布」按钮出现...")
         confirm_found = False
         for retry in range(8):
             time.sleep(1.5)
-            # 检查按钮是否变成了「确认发布」
             check_btn_js = (
                 "(function(){"
                 "var all=document.querySelectorAll('button');"
@@ -733,7 +947,7 @@ class ToutiaoPublisher(BasePublisher):
                 confirm_found = True
                 break
             if retry % 2 == 0:
-                print(f"  ... {cb_out[:150]}")
+                print(f"  ... {cb_out[:120]}")
 
         if confirm_found:
             step2_js = find_and_click + "(['确认发布'])"
@@ -751,6 +965,7 @@ class ToutiaoPublisher(BasePublisher):
 
         # Step 3: 检查是否有确认弹窗
         confirm_js = (
+            f"{REACT_CLICK_JS}"
             "(function(){"
             "var modals=document.querySelectorAll('[role=dialog],.byte-modal-wrapper');"
             "for(var i=0;i<modals.length;i++){"
@@ -761,15 +976,14 @@ class ToutiaoPublisher(BasePublisher):
             "var bt=(btns[j].innerText||'').trim();"
             "if(bt==='确定'||bt==='确认'||bt==='发布'||bt==='确认发布'){"
             "btns[j].focus();"
-            "btns[j].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));"
-            "btns[j].click();"
-            "return'confirmed:'+bt;"
+            "var rcResult=_rc(btns[j]);"
+            "return'confirmed:'+bt+' via:'+rcResult;"
             "}"
             "}"
             "var primaryBtns=m.querySelectorAll('.primary,.confirm,.btn-primary');"
             "for(var k=0;k<primaryBtns.length;k++){"
             "if(primaryBtns[k].offsetParent!==null){"
-            "primaryBtns[k].click();return'primary_btn';"
+            "_rc(primaryBtns[k]);return'primary_btn';"
             "}"
             "}"
             "}"
@@ -781,8 +995,7 @@ class ToutiaoPublisher(BasePublisher):
         print(f"  Step3 确认弹窗: {out3[:120]}")
         time.sleep(3)
 
-        # Step 4: 检查发布是否成功
-        # 首要标志：正文编辑器被清空（发布成功后头条会重置编辑器）
+        # Step 4: 验证发布结果 — 优先看编辑器是否清空，否则去后台列表确认
         time.sleep(2)
         check_cleared_js = (
             "(function(){"
@@ -795,47 +1008,44 @@ class ToutiaoPublisher(BasePublisher):
         )
         r_cleared = self.opencli("eval", check=False, noisy=False, cmd_extra=check_cleared_js)
         cleared_out = (r_cleared.stdout or "").strip()
-        print(f"  发布后内容状态: {cleared_out[:80]}")
+        print(f"  发布后编辑器: {cleared_out[:80]}")
 
-        # 提取正文字数
-        wm = re.search(r'words:(\d+)', cleared_out)
-        post_words = int(wm.group(1)) if wm else -1
         cm = re.search(r'content:(\d+)', cleared_out)
         post_content_len = int(cm.group(1)) if cm else -1
+        wm = re.search(r'words:(\d+)', cleared_out)
+        post_words = int(wm.group(1)) if wm else -1
 
         if post_content_len < 20 and post_words < 20:
-            print(f"  发布成功！编辑器已清空（内容{post_content_len}字，统计{post_words}字）")
+            print(f"  发布成功！编辑器已清空")
             return True
 
-        r_url = self.opencli("eval", check=False, noisy=False,
-                            cmd_extra="window.location.href")
-        final_url = (r_url.stdout or "").strip()
-        print(f"  最终URL: {final_url[:120]}")
+        # 编辑器未清空，去后台列表做最终验证
+        return self._verify_published()
 
-        if "publish" not in final_url and "graphic" not in final_url:
-            print(f"  发布成功！已跳转")
+    def _verify_published(self) -> bool:
+        """去后台文章列表搜标题验证是否真的发布了"""
+        title = getattr(self, '_article_title', '')
+        if not title:
+            print(f"  [验证] 无标题，无法验证")
+            return False
+
+        check_key = title[:15]
+        print(f"  [验证] 去后台列表搜索「{check_key}」...")
+
+        self.opencli('open "https://mp.toutiao.com/profile_v4/manage/content/all"', check=False, timeout=30)
+        time.sleep(4)
+
+        r = self.opencli("eval", check=False, noisy=False,
+                         cmd_extra="(function(){return document.body.innerText;})()", timeout=15)
+        if r.returncode != 0 or not r.stdout:
+            print(f"  [验证] 无法读取后台页面")
+            return False
+
+        if check_key in r.stdout:
+            print(f"  [验证] 后台确认：文章已发布 ✓")
             return True
 
-        # 检查成功提示
-        success_js = (
-            "(function(){"
-            "var all=document.querySelectorAll('.byte-notification,.ant-notification,.toast,.message,.byte-message');"
-            "for(var i=0;i<all.length;i++){"
-            "var t=(all[i].innerText||'').toLowerCase();"
-            "if(t.indexOf('成功')!==-1||t.indexOf('success')!==-1)return'success:'+t.substring(0,80);"
-            "}"
-            "var body=document.body.innerText||'';"
-            "if(body.indexOf('发布成功')!==-1||body.indexOf('已发布')!==-1)return'body_has_success';"
-            "return'no_success_indicator';"
-            "})()"
-        )
-        r_success = self.opencli("eval", check=False, noisy=False, cmd_extra=success_js)
-        success_out = (r_success.stdout or "").strip()
-        if "success" in success_out.lower():
-            print(f"  检测到成功: {success_out[:120]}")
-            return True
-
-        print(f"  [WARN] 未检测到发布成功信号")
+        print(f"  [验证] 后台未找到文章，发布可能失败")
         return False
 
     def _verify_content(self, article: dict):

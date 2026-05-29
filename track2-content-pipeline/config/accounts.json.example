@@ -1,0 +1,10 @@
+{
+    "_comment": "运行 'opencli profile list' 查看已连接的 profile，填到 opencli_profile 字段",
+    "toutiao": [
+        {"name": "大号", "opencli_profile": "ubz32tq7"},
+        {"name": "小号", "opencli_profile": "abc12345"}
+    ],
+    "baijiahao": [
+        {"name": "主号", "opencli_profile": "ubz32tq7"}
+    ]
+}

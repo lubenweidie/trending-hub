@@ -31,10 +31,14 @@ class BasePublisher(ABC):
     platform_name: str = ""
     edit_url: str = ""
 
-    def __init__(self):
+    def __init__(self, account_suffix: str = ""):
         import os as _os
         from datetime import datetime as _dt
-        self._session = f"{self.platform_name}-{_os.getpid()}-{_dt.now().strftime('%H%M%S')}"
+        import threading as _th
+        tag = account_suffix or _th.get_ident()
+        self._session = f"{self.platform_name}-{tag}-{_os.getpid()}-{_dt.now().strftime('%H%M%S')}"
+        self._account_name = ""
+        self._editor_opened = False
 
     # ============================================================
     # 抽象方法 — 子类必须实现
@@ -51,8 +55,8 @@ class BasePublisher(ABC):
         ...
 
     @abstractmethod
-    def fill_content(self, content: str):
-        """填写正文"""
+    def fill_content(self, content: str, clear_first: bool = True):
+        """填写正文，clear_first=False 时追加而不清空"""
         ...
 
     @abstractmethod
@@ -73,13 +77,6 @@ class BasePublisher(ABC):
     # ============================================================
     # opencli 命令封装
     # ============================================================
-
-    def load_config(self):
-        cfg_path = HERE / "baijiahao_config.json"
-        if cfg_path.exists():
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {}
 
     def get_publish_mode(self) -> str:
         mode_num = int(os.environ.get("PUBLISH_MODE", "1"))
@@ -122,6 +119,14 @@ class BasePublisher(ABC):
             self.sh_run("opencli daemon restart")
             time.sleep(2)
 
+    @staticmethod
+    def stop_daemon():
+        """关闭 opencli daemon，释放 Chrome 浏览器"""
+        r = subprocess.run("opencli daemon status", shell=True, capture_output=True, encoding="utf-8", errors="replace")
+        if "running" in (r.stdout or ""):
+            print("[Cleanup] 关闭 opencli daemon...")
+            subprocess.run("opencli daemon stop", shell=True, capture_output=True, timeout=10)
+
     def check_extension(self) -> bool:
         r = self.sh_run("opencli doctor")
         if "Extension: connected" in (r.stdout or ""):
@@ -157,18 +162,8 @@ class BasePublisher(ABC):
 
     @staticmethod
     def parse_article(filepath: Path) -> dict:
-        text = filepath.read_text(encoding="utf-8")
-        lines = text.strip().split("\n")
-        title = ""
-        content_start = 0
-        for i, line in enumerate(lines):
-            if line.startswith("# ") and not title:
-                title = line[2:].strip()
-            if not line.startswith("#") and line.strip() and not line.startswith("> "):
-                content_start = i
-                break
-        content = "\n".join(lines[content_start:]).strip() if content_start else ""
-        return {"title": title or "无标题", "content": content}
+        from article_utils import parse_article
+        return parse_article(filepath)
 
     @staticmethod
     def parse_source_url(article_path: Path) -> str:
@@ -185,11 +180,6 @@ class BasePublisher(ABC):
         text = article_path.read_text(encoding="utf-8")
         m = re.search(r'来源：(\S+)', text)
         return m.group(1) if m else ""
-
-    @staticmethod
-    def is_bilibili_source(article_path: Path) -> bool:
-        platform = BasePublisher.parse_source_platform(article_path)
-        return platform.lower() in ("b站", "bilibili", "bilibili")
 
     @staticmethod
     def parse_summary(article_path: Path) -> str:
@@ -420,6 +410,70 @@ class BasePublisher(ABC):
     # 主发布流程
     # ============================================================
 
+    def _enrich_article(self, article: dict, article_file: Path) -> tuple[Path | None, list]:
+        """Step 0: 源内容提取 + AI扩写 + 配图。返回 (cover_path, inline_images)。
+        cover_image 为 None 表示扩写失败。"""
+        source_url = self.parse_source_url(article_file)
+        platform = self.parse_source_platform(article_file)
+
+        pre_images = self.find_article_images(article_file)
+        cover_image = pre_images["cover"]
+        images = list(pre_images["inline"])
+        enriched = None
+
+        # AI 扩写
+        if source_url and len(article.get("content", "")) < MIN_ARTICLE_CONTENT:
+            source_content = self.extract_source_content(source_url)
+            if source_content and len(source_content) >= MIN_SOURCE_CONTENT:
+                source_file = article_file.with_suffix(".source.txt")
+                source_file.write_text(source_content, encoding="utf-8")
+                print(f"  [源内容] 已保存: {source_file.name} ({len(source_content)} 字)")
+            if not source_content or len(source_content) < MIN_SOURCE_CONTENT:
+                summary = self.parse_summary(article_file)
+                if summary:
+                    print(f"\n[扩写] 源页面提取失败，改用摘要 ({len(summary)} 字)")
+                    source_content = f"【原始资料】\n这是关于「{article['title']}」的一则新闻报道，来自{platform}平台。\n\n核心事实：{summary}\n\n请基于以上核心事实进行客观改写，保留关键信息，用自己的语言重新组织表达。"
+            if source_content and len(source_content) >= MIN_SOURCE_CONTENT:
+                article["platform"] = platform
+                enriched = self.enrich_article_with_source(article, source_content)
+                if enriched:
+                    article.update(enriched)
+                    self._save_enriched_article(article_file, article)
+            else:
+                print(f"\n[扩写] 无可用素材（源页面+摘要均为空），跳过扩写")
+
+        if "发布时基于源内容 AI 扩写" in article.get("content", ""):
+            print(f"[{self.platform_name}] 扩写失败，正文仍为占位符，终止发布")
+            return None, []
+
+        # 配图
+        if not pre_images["cover"] and not pre_images["inline"] and not images:
+            keywords = enriched.get("image_keywords", "") if (enriched and isinstance(enriched, dict)) else ""
+            print(f"\n[配图] 百度/Bing搜图: {article.get('title', '')[:30]}")
+            from image_search import get_images_for_article
+            result = get_images_for_article(
+                article.get("title", "")[:30], article_file.stem, article_file.parent,
+                count=3, fallback_query=keywords)
+            if result["cover"]:
+                cover_image = result["cover"]
+            images = list(result["inline"])
+
+        if pre_images["cover"] or pre_images["inline"]:
+            print(f"\n[配图] 使用预下载图片: 封面={'有' if cover_image else '无'}, 配图{len(images)}张")
+
+        return cover_image, images
+
+    def prepare_editor(self, title: str = "") -> bool:
+        """串行准备：切 profile 后立即绑定 session 到当前 Chrome profile。
+        之后 fill_content / insert_images / click_publish 等 session 隔离命令可并行。"""
+        self.ensure_daemon()
+        if not self.open_editor():
+            return False
+        if title:
+            self.fill_title(title)
+        self._editor_opened = True
+        return True
+
     def publish(self, article_path: str = None, mode: str = None):
         if mode is None:
             mode = self.get_publish_mode()
@@ -432,9 +486,7 @@ class BasePublisher(ABC):
         if article_path:
             article_file = Path(article_path)
         else:
-            cfg = self.load_config()
-            article_dir = HERE / cfg.get("article_source_dir", "output/articles")
-            article_file = self.find_latest_article(str(article_dir))
+            article_file = self.find_latest_article(str(OUTPUT_DIR))
 
         if not article_file or not article_file.exists():
             print(f"[{self.platform_name}] 没有文章，跳过")
@@ -451,60 +503,61 @@ class BasePublisher(ABC):
         print(f"发布模式: {'立即发布' if mode == 'publish' else '存草稿'}")
 
         # Step 0: 源内容提取 + AI扩写 + 配图
-        source_url = self.parse_source_url(article_file)
-        platform = self.parse_source_platform(article_file)
-        image_dir = article_file.parent
-
-        pre_images = self.find_article_images(article_file)
-        cover_image = pre_images["cover"]
-        images = list(pre_images["inline"])
-        enriched = None
-
-        if source_url and not self.is_bilibili_source(article_file) and len(article.get("content", "")) < MIN_ARTICLE_CONTENT:
-            source_content = self.extract_source_content(source_url)
-            if source_content and len(source_content) >= MIN_SOURCE_CONTENT:
-                source_file = article_file.with_suffix(".source.txt")
-                source_file.write_text(source_content, encoding="utf-8")
-                print(f"  [源内容] 已保存: {source_file.name} ({len(source_content)} 字)")
-            if not source_content or len(source_content) < MIN_SOURCE_CONTENT:
-                summary = self.parse_summary(article_file)
-                if summary:
-                    print(f"\n[扩写] 源页面提取失败，改用摘要 ({len(summary)} 字)")
-                    source_content = f"【原始资料】\n这是关于「{article['title']}」的一则新闻报道，来自{platform}平台。\n\n核心事实：{summary}\n\n请基于以上核心事实进行客观改写，保留关键信息，用自己的语言重新组织表达。"
-            if source_content and len(source_content) >= MIN_SOURCE_CONTENT:
-                article["platform"] = platform
-                enriched = self.enrich_article_with_source(article, source_content)
-                if enriched:
-                    article = enriched
-                    self._save_enriched_article(article_file, article)
-            else:
-                print(f"\n[扩写] 无可用素材（源页面+摘要均为空），跳过扩写")
-
-        if not pre_images["cover"] and not pre_images["inline"] and not images:
-            keywords = enriched.get("image_keywords", "") if (enriched and isinstance(enriched, dict)) else ""
-            print(f"\n[配图] 百度/Bing搜图: {article.get('title', '')[:30]}")
-            from image_search import get_images_for_article
-            result = get_images_for_article(
-                article.get("title", "")[:30], article_file.stem, article_file.parent,
-                count=3, fallback_query=keywords)
-            if result["cover"]:
-                cover_image = result["cover"]
-            images = list(result["inline"])
-
-        if pre_images["cover"] or pre_images["inline"]:
-            print(f"\n[配图] 使用预下载图片: 封面={'有' if cover_image else '无'}, 配图{len(images)}张")
-
-        if "发布时基于源内容 AI 扩写" in article.get("content", ""):
-            print(f"[{self.platform_name}] 扩写失败，正文仍为占位符，终止发布")
+        cover_image, images = self._enrich_article(article, article_file)
+        if cover_image is None:
+            return False  # 扩写失败
+        if article.get("content", "") == "":
+            print(f"[{self.platform_name}] 正文为空，终止发布")
             return False
 
-        # Step 1-5: 编辑器 → 标题 → 正文 → 封面 → 配图 → 发布
-        if not self.open_editor():
-            print(f"[{self.platform_name}] 编辑器打开失败")
-            return False
+        # Step 1-5: 编辑器 → 标题 → 正文(图文穿插) → 封面 → 发布
+        if self._editor_opened:
+            print(f"[{self.platform_name}] 编辑器已就绪（串行准备阶段已打开）")
+        else:
+            self.ensure_daemon()
+            if not self.open_editor():
+                print(f"[{self.platform_name}] 编辑器打开失败")
+                return False
 
         self.fill_title(article["title"])
-        self.fill_content(article["content"])
+
+        # 图文穿插：按 [IMG] 标记拆分，文字和图片交替插入
+        raw_content = article["content"]
+        segments = raw_content.split("[IMG]")
+        segments = [s.strip() for s in segments if s.strip()]
+
+        inline_images = [img for img in images if img != cover_image]
+        if len(inline_images) < len(images):
+            print(f"\n[去重] 已跳过封面图，正文配图 {len(inline_images)} 张")
+
+        has_markers = "[IMG]" in raw_content
+        if has_markers and inline_images:
+            print(f"\n[图文] 穿插模式: {len(segments)}段文字 + {len(inline_images)}张图")
+            img_idx = 0
+            for i, seg in enumerate(segments):
+                # 第一段清空编辑器，后续段追加以保留之前插入的图片
+                is_first = (i == 0)
+                ok = self.fill_content(seg, clear_first=is_first)
+                if not ok:
+                    print(f"  [WARN] 第{i+1}段内容填充失败，继续后续段落...")
+                time.sleep(0.5)
+                # 最后一段文字后不插图片
+                if img_idx < len(inline_images) and i < len(segments) - 1:
+                    print(f"  [图文] 插入第{img_idx+1}张图片")
+                    self.insert_images_to_editor([inline_images[img_idx]])
+                    img_idx += 1
+                    time.sleep(1)
+            # 剩余的图片插在文末
+            while img_idx < len(inline_images):
+                print(f"  [图文] 文末追加第{img_idx+1}张图片")
+                self.insert_images_to_editor([inline_images[img_idx]])
+                img_idx += 1
+                time.sleep(1)
+        else:
+            ok = self.fill_content(raw_content)
+            if not ok:
+                print(f"  [WARN] 正文填充失败，继续流程...")
+            self.insert_images_to_editor(inline_images)
 
         if cover_image and cover_image.exists():
             print(f"\n[封面] 设置封面图: {cover_image.name}")
@@ -513,11 +566,6 @@ class BasePublisher(ABC):
             print(f"\n[封面] 无独立封面，用首张配图作为封面")
             self.set_cover_image(images[0])
             cover_image = images[0]
-
-        inline_images = [img for img in images if img != cover_image]
-        if len(inline_images) < len(images):
-            print(f"\n[去重] 已跳过封面图，正文配图 {len(inline_images)} 张")
-        self.insert_images_to_editor(inline_images)
 
         time.sleep(2)
         self._verify_content(article)
@@ -550,3 +598,12 @@ class BasePublisher(ABC):
     def _verify_content(self, article: dict):
         """延迟回读验证标题与正文（子类可覆盖）"""
         pass
+
+    def screenshot(self, save_dir: Path):
+        """截取当前页面截图，保存到指定目录"""
+        try:
+            path = save_dir / "screenshot.png"
+            self.opencli(f"screenshot {self._shell_quote_win(str(path))}", check=False, timeout=30)
+            print(f"[截图] 已保存: {path.name}")
+        except Exception as e:
+            print(f"[截图] 失败: {e}")

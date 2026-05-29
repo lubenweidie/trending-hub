@@ -1,0 +1,11 @@
+{
+    "_说明": "百家号发布配置",
+
+    "article_source_dir": "output/articles",
+
+    "publish": {
+        "mode": "draft",
+        "_mode说明": "draft=存草稿(推荐), publish=立即发布",
+        "daily_limit": 2
+    }
+}

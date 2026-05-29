@@ -40,25 +40,22 @@ def run_all() -> Dict[str, List[TrendItem]]:
         results["baidu"] = []
     time.sleep(0.5)
 
-    # B站 — 已禁用
-    results["bilibili"] = []
-
-    # 掘金
+    # 新华网
     try:
-        from . import juejin
-        results["juejin"] = collect_with_fallback("juejin", juejin.collect_juejin)
+        from . import xinhuanet
+        results["xinhuanet"] = collect_with_fallback("xinhuanet", xinhuanet.collect_xinhuanet)
     except Exception as e:
-        print(f"[SKIP] juejin: {e}")
-        results["juejin"] = []
+        print(f"[SKIP] xinhuanet: {e}")
+        results["xinhuanet"] = []
     time.sleep(0.5)
 
-    # V2EX
+    # 人民日报
     try:
-        from . import v2ex
-        results["v2ex"] = collect_with_fallback("v2ex", v2ex.collect_v2ex)
+        from . import people_rm
+        results["people_rm"] = collect_with_fallback("people_rm", people_rm.collect_people_rm)
     except Exception as e:
-        print(f"[SKIP] v2ex: {e}")
-        results["v2ex"] = []
+        print(f"[SKIP] people_rm: {e}")
+        results["people_rm"] = []
 
     total = sum(len(v) for v in results.values())
     print(f"\n[SUMMARY] 共采集 {total} 条热榜（{len(results)}个平台）")

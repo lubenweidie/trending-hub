@@ -17,6 +17,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
+from article_utils import parse_article
 from publishers import REGISTRY
 from publishers.base import BasePublisher
 
@@ -43,7 +44,7 @@ def main():
         print("[Exit] 没有找到文章")
         sys.exit(1)
 
-    article = BasePublisher.parse_article(article_file)
+    article = parse_article(article_file)
     print(f"文章: {article['title'][:50]}")
     print(f"字数: {len(article['content'])}")
     print(f"模式: {'立即发布' if mode == 'publish' else '存草稿'}")
@@ -61,21 +62,9 @@ def main():
         status = "成功" if ok else "失败"
         print(f"[{name}] {status}")
 
-    # 归档（目录名加上发布平台）
-    import shutil
-    article_dir = article_file.parent
-    publish_platform = "-".join(platforms)
-    new_name = f"{article_dir.name}-{publish_platform}"
-    new_path = article_dir.parent / new_name
-    article_dir.rename(new_path)
-    article_dir = new_path
-    published_dir = HERE / "output" / "articles" / "published"
-    published_dir.mkdir(exist_ok=True)
-    archived = published_dir / article_dir.name
-    if archived.exists():
-        shutil.rmtree(str(archived))
-    shutil.move(str(article_dir), str(archived))
-    print(f"[归档] {archived.name}")
+    # 归档
+    from article_utils import archive_article
+    archive_article(article_file, "-".join(platforms), HERE / "output" / "articles")
 
 
 if __name__ == "__main__":

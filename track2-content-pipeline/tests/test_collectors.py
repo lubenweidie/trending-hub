@@ -1,6 +1,9 @@
 """采集器测试"""
 import sys
-sys.path.insert(0, '..')
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from collectors.base import collect_with_fallback, TrendItem
 
 def test_collector_failure_returns_empty():
