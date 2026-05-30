@@ -104,7 +104,16 @@ def get_next_account(platform: str) -> dict | None:
 
 
 def ensure_chrome_windows():
-    """打开所有 Chrome Profile 窗口，确保 opencli 能连接"""
+    """如果 opencli 没有已连接的 Profile，则打开所有 Chrome Profile 窗口"""
+    r = subprocess.run(
+        "opencli profile list", shell=True,
+        capture_output=True, encoding="utf-8", errors="replace"
+    )
+    connected_count = (r.stdout or "").count(" — connected")
+    if connected_count > 0:
+        print(f"[Chrome] {connected_count} 个 Profile 已连接，无需打开窗口")
+        return
+
     chrome_exe = os.path.expandvars(
         r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"
     )
@@ -116,7 +125,7 @@ def ensure_chrome_windows():
             chrome_exe = p
             break
     else:
-        print("[Chrome] 找不到 Chrome，跳过打开窗口")
+        print("[Chrome] 找不到 Chrome，跳过")
         return
 
     user_data = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data")
@@ -128,7 +137,6 @@ def ensure_chrome_windows():
     profiles = json.loads(local_state.read_text(encoding="utf-8"))
     info = profiles.get("profile", {}).get("info_cache", {})
 
-    opened = 0
     for dir_name in info:
         profile_dir = Path(user_data) / dir_name
         if not profile_dir.exists():
@@ -139,12 +147,10 @@ def ensure_chrome_windows():
             [chrome_exe, f"--profile-directory={dir_name}"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        opened += 1
         time.sleep(0.5)
 
-    if opened:
-        print(f"[Chrome] 已打开 {opened} 个窗口，等待扩展连接...")
-        time.sleep(3)
+    print("[Chrome] 等待扩展连接...")
+    time.sleep(3)
 
 
 def _load_state() -> dict:
