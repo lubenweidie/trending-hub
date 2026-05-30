@@ -245,7 +245,7 @@ def publish_to_platforms(platforms: list[str], mode: str = "draft", article_coun
 
         account_rotator.switch_profile(acc)
         pub_cls = REGISTRY[plat]
-        pub = pub_cls(account_suffix=acc["name"])
+        pub = pub_cls(account_suffix=acc["name"], profile_id=acc.get("opencli_profile", ""))
         pub._account_name = acc["name"]
 
         article_file = article_files[idx]

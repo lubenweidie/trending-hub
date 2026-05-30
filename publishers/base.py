@@ -31,7 +31,7 @@ class BasePublisher(ABC):
     platform_name: str = ""
     edit_url: str = ""
 
-    def __init__(self, account_suffix: str = ""):
+    def __init__(self, account_suffix: str = "", profile_id: str = ""):
         import os as _os
         from datetime import datetime as _dt
         import threading as _th
@@ -39,6 +39,7 @@ class BasePublisher(ABC):
         self._session = f"{self.platform_name}-{tag}-{_os.getpid()}-{_dt.now().strftime('%H%M%S')}"
         self._account_name = ""
         self._editor_opened = False
+        self._profile_id = profile_id
 
     # ============================================================
     # 抽象方法 — 子类必须实现
@@ -95,10 +96,11 @@ class BasePublisher(ABC):
                 noisy: bool = True, timeout: int = 180) -> subprocess.CompletedProcess:
         if noisy:
             print(f"  $ {cmd}")
+        profile_flag = f" --profile {self._shell_quote_win(self._profile_id)}" if self._profile_id else ""
         if cmd_extra:
-            full_cmd = f"opencli browser {self._session} {cmd} {self._shell_quote_win(cmd_extra)}"
+            full_cmd = f"opencli{profile_flag} browser {self._session} {cmd} {self._shell_quote_win(cmd_extra)}"
         else:
-            full_cmd = f"opencli browser {self._session} {cmd}"
+            full_cmd = f"opencli{profile_flag} browser {self._session} {cmd}"
         r = self.sh_run(full_cmd, timeout=timeout)
         if check and r.returncode != 0:
             err = (r.stderr or "").strip()[:300]
