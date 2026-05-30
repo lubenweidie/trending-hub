@@ -113,7 +113,7 @@ def _score_topic(topic: Dict, target_platform: str = "") -> int:
     if any(kw in title for kw in ["？", "?", "吗", "如何", "怎么", "怎样", "什么", "为何"]):
         score += 3
     # 标题暗示利益/风险
-    if any(kw in title for kw in ["钱", "赚", "亏", "省", "赔偿", "补偿", "罚款", "免费",
+    if any(kw in title for kw in ["钱", "赚钱", "亏", "省钱", "赔偿", "补偿", "罚款", "免费",
                                    "涨价", "降价", "福利", "补贴", "红包"]):
         score += 5
 
@@ -123,11 +123,26 @@ def _score_topic(topic: Dict, target_platform: str = "") -> int:
         cred = int(cred * 0.4)  # 权威来源在头条只保留40%加分
     score += cred
 
-    # 4. 惩罚：仅对真正低价值话题（整容塌房等）
+    # 4. 惩罚：低价值话题（整容塌房等）
     for pat in LOW_VALUE_PATTERNS:
         if pat in title:
             score -= 15
             break
+
+    # 5. 空心话题惩罚：高分但无个人关联 → 降权
+    #    例外：民生话题（房贷/医保/养老等）天然跟个人有关，不罚
+    livelihood_kw = ["房贷", "医保", "养老", "住房", "补贴", "就业", "工资", "物价",
+                     "教育", "孩子", "学校", "看病", "健康", "安全"]
+    is_livelihood = any(kw in combined for kw in livelihood_kw)
+    has_identity = any(g in title for g in identity_groups)
+    has_benefit = any(kw in title for kw in ["钱", "赚钱", "亏", "省钱", "赔偿", "补偿", "罚款", "免费",
+                                              "涨价", "降价", "福利", "补贴", "红包"])
+    has_question = any(kw in title for kw in ["？", "?", "吗", "如何", "怎么", "怎样", "什么", "为何"])
+    has_people_angle = is_livelihood or has_identity or has_benefit or has_question
+    if not has_people_angle and score >= 15:
+        # 高分但没个人关联 = 纯政策/纯科技通告，降权 40%
+        # 阈值 20：避免误伤中等分但有人群关联的话题（如"有房贷的注意"=18分）
+        score = int(score * 0.6)
 
     return score
 
