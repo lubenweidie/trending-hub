@@ -104,16 +104,28 @@ def get_next_account(platform: str) -> dict | None:
 
 
 def ensure_chrome_windows():
-    """如果 opencli 没有已连接的 Profile，则打开所有 Chrome Profile 窗口"""
+    """确保 Chrome Profile 窗口已打开且 opencli 已连接"""
+    # 1. 先确保 daemon 运行
+    r = subprocess.run(
+        "opencli daemon status", shell=True,
+        capture_output=True, encoding="utf-8", errors="replace"
+    )
+    if "running" not in (r.stdout or ""):
+        print("[Chrome] 启动 daemon...")
+        subprocess.run("opencli daemon restart", shell=True, capture_output=True)
+        time.sleep(2)
+
+    # 2. 检查已连接的 profile
     r = subprocess.run(
         "opencli profile list", shell=True,
         capture_output=True, encoding="utf-8", errors="replace"
     )
     connected_count = (r.stdout or "").count(" — connected")
     if connected_count > 0:
-        print(f"[Chrome] {connected_count} 个 Profile 已连接，无需打开窗口")
+        print(f"[Chrome] {connected_count} 个 Profile 已连接，跳过")
         return
 
+    # 3. 没有连接 → 打开所有 Chrome Profile 窗口
     chrome_exe = os.path.expandvars(
         r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"
     )
@@ -131,7 +143,6 @@ def ensure_chrome_windows():
     user_data = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data")
     local_state = Path(user_data) / "Local State"
     if not local_state.exists():
-        print("[Chrome] 找不到 Local State，跳过")
         return
 
     profiles = json.loads(local_state.read_text(encoding="utf-8"))
@@ -149,8 +160,20 @@ def ensure_chrome_windows():
         )
         time.sleep(0.5)
 
+    # 4. 轮询等待扩展连接（最多 30 秒）
     print("[Chrome] 等待扩展连接...")
-    time.sleep(3)
+    for i in range(15):
+        time.sleep(2)
+        r = subprocess.run(
+            "opencli profile list", shell=True,
+            capture_output=True, encoding="utf-8", errors="replace"
+        )
+        if " — connected" in (r.stdout or ""):
+            count = (r.stdout or "").count(" — connected")
+            print(f"[Chrome] {count} 个 Profile 已连接 (耗时 {(i+1)*2}s)")
+            return
+
+    print("[Chrome] 警告：30秒内未检测到连接，继续执行")
 
 
 def _load_state() -> dict:

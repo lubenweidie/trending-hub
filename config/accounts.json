@@ -1,0 +1,14 @@
+{
+  "默认": {
+    "opencli_profile": "ubz32tq7",
+    "platforms": ["baijiahao", "toutiao"]
+  },
+  "luruizhong": {
+    "opencli_profile": "tnat6u2j",
+    "platforms": ["baijiahao", "toutiao"]
+  },
+  "lujinsheng": {
+    "opencli_profile": "cywujv3w",
+    "platforms": ["baijiahao", "toutiao"]
+  }
+}
