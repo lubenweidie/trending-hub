@@ -323,15 +323,25 @@ def _print_table(platform_key: str, articles: list[dict], top_n: int):
     print(f"\n{'=' * 65}")
     print(f"  {label} TOP {top_n}（共 {len(articles)} 篇）")
     print(f"{'=' * 65}")
-    print(f"  {'#':<3} {'阅读':<6} {'点赞':<5} {'评论':<5} {'标题'}")
-    print(f"  {'-' * 60}")
+    has_impressions = any(a.get("展现") for a in sorted_articles)
+    if has_impressions:
+        print(f"  {'#':<3} {'展现':<7} {'阅读':<6} {'阅读率':<6} {'点赞':<5} {'评论':<5} {'标题'}")
+        print(f"  {'-' * 72}")
+    else:
+        print(f"  {'#':<3} {'阅读':<6} {'点赞':<5} {'评论':<5} {'标题'}")
+        print(f"  {'-' * 60}")
     for i, a in enumerate(sorted_articles, 1):
-        title = a.get("title", "?")[:38]
+        title = a.get("title", "?")[:35]
         reads = a.get("阅读", a.get("views", 0))
         likes = a.get("点赞", 0)
         comments = a.get("评论", 0)
+        impressions = a.get("展现", 0)
         date = (a.get("date") or "")[:10]
-        print(f"  {i:<3} {str(reads):<6} {str(likes):<5} {str(comments):<5} {title}")
+        if has_impressions:
+            rate = f"{reads / impressions * 100:.1f}%" if int(impressions) > 0 else "—"
+            print(f"  {i:<3} {str(impressions):<7} {str(reads):<6} {rate:<6} {str(likes):<5} {str(comments):<5} {title}")
+        else:
+            print(f"  {i:<3} {str(reads):<6} {str(likes):<5} {str(comments):<5} {title}")
         if date:
             print(f"       {date}")
     print()
