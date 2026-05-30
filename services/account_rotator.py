@@ -30,7 +30,9 @@
   3. 填入 accounts.json
 """
 import json
+import os
 import subprocess
+import time
 from pathlib import Path
 
 HERE = Path(__file__).parent.parent
@@ -79,8 +81,8 @@ def switch_profile(account: dict):
     profile = account.get("opencli_profile", "")
     if profile:
         subprocess.run(
-            ["opencli", "profile", "use", profile],
-            capture_output=True, text=True,
+            f"opencli profile use {profile}",
+            shell=True, capture_output=True, text=True,
         )
 
 
@@ -99,6 +101,50 @@ def get_next_account(platform: str) -> dict | None:
 
     switch_profile(account)
     return account
+
+
+def ensure_chrome_windows():
+    """打开所有 Chrome Profile 窗口，确保 opencli 能连接"""
+    chrome_exe = os.path.expandvars(
+        r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"
+    )
+    alt_chrome = os.path.expandvars(
+        r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
+    )
+    for p in [chrome_exe, alt_chrome]:
+        if os.path.isfile(p):
+            chrome_exe = p
+            break
+    else:
+        print("[Chrome] 找不到 Chrome，跳过打开窗口")
+        return
+
+    user_data = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data")
+    local_state = Path(user_data) / "Local State"
+    if not local_state.exists():
+        print("[Chrome] 找不到 Local State，跳过")
+        return
+
+    profiles = json.loads(local_state.read_text(encoding="utf-8"))
+    info = profiles.get("profile", {}).get("info_cache", {})
+
+    opened = 0
+    for dir_name in info:
+        profile_dir = Path(user_data) / dir_name
+        if not profile_dir.exists():
+            continue
+        name = info[dir_name].get("name", dir_name)
+        print(f"[Chrome] 打开窗口: {name}")
+        subprocess.Popen(
+            [chrome_exe, f"--profile-directory={dir_name}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        opened += 1
+        time.sleep(0.5)
+
+    if opened:
+        print(f"[Chrome] 已打开 {opened} 个窗口，等待扩展连接...")
+        time.sleep(3)
 
 
 def _load_state() -> dict:

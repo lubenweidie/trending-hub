@@ -237,6 +237,9 @@ def publish_to_platforms(platforms: list[str], mode: str = "draft", article_coun
         print(f"  [{plat}] {len(accs)}个账号: {names}")
     print(f"{'='*55}")
 
+    # 自动打开所有 Chrome Profile 窗口（确保 opencli 可连接）
+    account_rotator.ensure_chrome_windows()
+
     # Step 2: 串行准备 — 切 profile + 打开编辑器（绑定 session 到对应 Chrome profile）
     tasks = []
     for idx, (plat, acc) in enumerate(all_accounts):
