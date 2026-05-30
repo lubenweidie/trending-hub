@@ -1,5 +1,138 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>timestamp</title></head>
-<body><h1>timestamp</h1><p>TODO: 根据方案 [DS-03] 实现</p></body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>时间戳转换 - Unix时间戳与日期互转 | 浏览器端处理</title>
+    <meta name="description" content="免费的在线时间戳转换工具，支持Unix时间戳与日期互转，所有处理在浏览器端完成。">
+    <link rel="canonical" href="https://你的域名/tools/timestamp.html">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-4xl mx-auto px-4 py-3">
+            <a href="../index.html" class="text-blue-600 hover:underline">&larr; 返回工具列表</a>
+        </div>
+    </nav>
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-2">时间戳转换</h1>
+        <p class="text-gray-500 mb-6">所有处理在浏览器端完成，数据不会上传到服务器 &#x1F512;</p>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="font-semibold text-lg mb-3">当前时间戳</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="text-sm text-gray-500">秒级 (10位)</label>
+                    <div class="font-mono text-lg bg-gray-100 p-2 rounded" id="current-seconds">-</div>
+                </div>
+                <div>
+                    <label class="text-sm text-gray-500">毫秒级 (13位)</label>
+                    <div class="font-mono text-lg bg-gray-100 p-2 rounded" id="current-millis">-</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="font-semibold text-lg mb-3">时间戳 → 日期</h2>
+            <input id="ts-input" class="w-full p-3 border rounded font-mono text-sm mb-3" placeholder="输入Unix时间戳（秒或毫秒）" maxlength="13">
+            <div class="flex gap-2 mb-3">
+                <select id="tz-select" class="border rounded p-2 text-sm">
+                    <option value="Asia/Shanghai">北京时间 (UTC+8)</option>
+                    <option value="America/New_York">纽约 (UTC-5)</option>
+                    <option value="Europe/London">伦敦 (UTC+0)</option>
+                    <option value="Asia/Tokyo">东京 (UTC+9)</option>
+                    <option value="UTC">UTC</option>
+                </select>
+                <button onclick="convertTsToDate()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">转换</button>
+            </div>
+            <div id="ts-result" class="font-mono bg-gray-100 p-3 rounded text-sm"></div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="font-semibold text-lg mb-3">日期 → 时间戳</h2>
+            <div class="flex flex-wrap gap-2 mb-3">
+                <input id="dt-input" type="datetime-local" class="border rounded p-2 text-sm flex-1 min-w-[200px]">
+                <button onclick="convertDateToTs()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">转换为时间戳</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="text-sm text-gray-500">秒级时间戳</label>
+                    <div id="dt-result-sec" class="font-mono bg-gray-100 p-3 rounded text-sm">-</div>
+                </div>
+                <div>
+                    <label class="text-sm text-gray-500">毫秒级时间戳</label>
+                    <div id="dt-result-ms" class="font-mono bg-gray-100 p-3 rounded text-sm">-</div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script>
+        const tsInput = document.getElementById('ts-input');
+        const tsResult = document.getElementById('ts-result');
+        const dtInput = document.getElementById('dt-input');
+        const dtResultSec = document.getElementById('dt-result-sec');
+        const dtResultMs = document.getElementById('dt-result-ms');
+        const tzSelect = document.getElementById('tz-select');
+
+        function updateCurrentTs() {
+            const now = Date.now();
+            document.getElementById('current-seconds').textContent = Math.floor(now / 1000);
+            document.getElementById('current-millis').textContent = now;
+        }
+        updateCurrentTs();
+        setInterval(updateCurrentTs, 1000);
+
+        function convertTsToDate() {
+            let val = tsInput.value.trim();
+            if (!val) {
+                tsResult.textContent = '请输入时间戳';
+                return;
+            }
+            let ts = parseInt(val, 10);
+            if (isNaN(ts) || ts < 0) {
+                tsResult.textContent = '时间戳格式无效，请输入纯数字';
+                return;
+            }
+            if (ts > 9999999999999) {
+                tsResult.textContent = '时间戳数值过大，无法处理';
+                return;
+            }
+            if (ts < 100000000000) ts *= 1000;
+            try {
+                const date = new Date(ts);
+                if (isNaN(date.getTime())) {
+                    tsResult.textContent = '时间戳转换失败，请检查输入';
+                    return;
+                }
+                tsResult.textContent = date.toLocaleString('zh-CN', { timeZone: tzSelect.value, hour12: false });
+            } catch (e) {
+                tsResult.textContent = '转换出错，请检查输入内容';
+                console.error('timestamp convert error:', e);
+            }
+        }
+
+        function convertDateToTs() {
+            const val = dtInput.value;
+            if (!val) {
+                dtResultSec.textContent = '请选择日期';
+                dtResultMs.textContent = '请选择日期';
+                return;
+            }
+            try {
+                const date = new Date(val);
+                const ms = date.getTime();
+                dtResultSec.textContent = Math.floor(ms / 1000);
+                dtResultMs.textContent = ms;
+            } catch (e) {
+                dtResultSec.textContent = '转换出错';
+                dtResultMs.textContent = '转换出错';
+                console.error('date convert error:', e);
+            }
+        }
+
+        tsInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') convertTsToDate();
+        });
+    </script>
+</body>
 </html>

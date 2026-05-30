@@ -1,5 +1,201 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>color-convert</title></head>
-<body><h1>color-convert</h1><p>TODO: 根据方案 [DS-03] 实现</p></body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>颜色转换 - HEX/RGB/HSL颜色格式互转 | 浏览器端处理</title>
+    <meta name="description" content="免费的在线颜色转换工具，支持HEX/RGB/HSL颜色格式互转，所有处理在浏览器端完成。">
+    <link rel="canonical" href="https://你的域名/tools/color-convert.html">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-4xl mx-auto px-4 py-3">
+            <a href="../index.html" class="text-blue-600 hover:underline">&larr; 返回工具列表</a>
+        </div>
+    </nav>
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-2">颜色转换</h1>
+        <p class="text-gray-500 mb-6">所有处理在浏览器端完成，数据不会上传到服务器 &#x1F512;</p>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="font-semibold text-lg mb-3">选择颜色</h2>
+            <div class="flex flex-wrap items-center gap-4 mb-4">
+                <input id="color-picker" type="color" class="w-16 h-16 rounded cursor-pointer border" oninput="fromPicker()">
+                <div id="color-swatch" class="w-16 h-16 rounded border" style="background:#3b82f6"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-semibold text-sm text-gray-500 mb-2">HEX</h3>
+                <input id="hex-input" class="w-full p-2 border rounded font-mono text-sm mb-2" placeholder="#3b82f6" maxlength="7" oninput="fromHEX()">
+                <div id="hex-preview" class="h-6 rounded" style="background:#3b82f6"></div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-semibold text-sm text-gray-500 mb-2">RGB</h3>
+                <div class="flex gap-1 mb-2">
+                    <input id="r-input" class="w-full p-2 border rounded font-mono text-sm" placeholder="59" maxlength="3" oninput="fromRGB()">
+                    <input id="g-input" class="w-full p-2 border rounded font-mono text-sm" placeholder="130" maxlength="3" oninput="fromRGB()">
+                    <input id="b-input" class="w-full p-2 border rounded font-mono text-sm" placeholder="246" maxlength="3" oninput="fromRGB()">
+                </div>
+                <div id="rgb-preview" class="h-6 rounded" style="background:#3b82f6"></div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-semibold text-sm text-gray-500 mb-2">HSL</h3>
+                <div class="flex gap-1 mb-2">
+                    <input id="h-input" class="w-full p-2 border rounded font-mono text-sm" placeholder="217" maxlength="3" oninput="fromHSL()">
+                    <input id="s-input" class="w-full p-2 border rounded font-mono text-sm" placeholder="91" maxlength="3" oninput="fromHSL()">
+                    <input id="l-input" class="w-full p-2 border rounded font-mono text-sm" placeholder="60" maxlength="3" oninput="fromHSL()">
+                </div>
+                <div id="hsl-preview" class="h-6 rounded" style="background:#3b82f6"></div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="font-semibold text-lg mb-3">从CSS颜色值解析</h2>
+            <input id="css-color" class="w-full p-3 border rounded font-mono text-sm mb-3" placeholder="输入CSS颜色值，如: #ff6600, rgb(255,100,0), hsl(24,100%,50%), red" maxlength="200">
+            <button onclick="parseCSS()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">解析</button>
+            <div id="parse-result" class="font-mono text-sm mt-3 space-y-1"></div>
+        </div>
+    </main>
+    <script>
+        function syncAll(hex) {
+            var rgb = hexToRgb(hex);
+            var hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+            document.getElementById('hex-input').value = hex;
+            document.getElementById('r-input').value = rgb.r;
+            document.getElementById('g-input').value = rgb.g;
+            document.getElementById('b-input').value = rgb.b;
+            document.getElementById('h-input').value = hsl.h;
+            document.getElementById('s-input').value = hsl.s;
+            document.getElementById('l-input').value = hsl.l;
+            document.getElementById('color-picker').value = hex;
+            document.getElementById('color-swatch').style.background = hex;
+            document.getElementById('hex-preview').style.background = hex;
+            document.getElementById('rgb-preview').style.background = hex;
+            document.getElementById('hsl-preview').style.background = hex;
+        }
+
+        function fromPicker() {
+            syncAll(document.getElementById('color-picker').value);
+        }
+
+        function fromHEX() {
+            var val = document.getElementById('hex-input').value.trim();
+            if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
+            syncAll(val.toLowerCase());
+        }
+
+        function fromRGB() {
+            var r = parseInt(document.getElementById('r-input').value) || 0;
+            var g = parseInt(document.getElementById('g-input').value) || 0;
+            var b = parseInt(document.getElementById('b-input').value) || 0;
+            if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) return;
+            syncAll(rgbToHex(r, g, b));
+        }
+
+        function fromHSL() {
+            var h = parseInt(document.getElementById('h-input').value) || 0;
+            var s = parseInt(document.getElementById('s-input').value) || 0;
+            var l = parseInt(document.getElementById('l-input').value) || 0;
+            if (h < 0 || h > 360 || s < 0 || s > 100 || l < 0 || l > 100) return;
+            var rgb = hslToRgb(h, s, l);
+            syncAll(rgbToHex(rgb.r, rgb.g, rgb.b));
+        }
+
+        function hexToRgb(hex) {
+            return {
+                r: parseInt(hex.slice(1, 3), 16),
+                g: parseInt(hex.slice(3, 5), 16),
+                b: parseInt(hex.slice(5, 7), 16)
+            };
+        }
+
+        function rgbToHex(r, g, b) {
+            return '#' + [r, g, b].map(function(x) {
+                var h = x.toString(16);
+                return h.length === 1 ? '0' + h : h;
+            }).join('');
+        }
+
+        function rgbToHsl(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            var max = Math.max(r, g, b), min = Math.min(r, g, b);
+            var h = 0, s = 0, l = (max + min) / 2;
+            if (max !== min) {
+                var d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+                    case g: h = ((b - r) / d + 2) / 6; break;
+                    case b: h = ((r - g) / d + 4) / 6; break;
+                }
+            }
+            return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+        }
+
+        function hslToRgb(h, s, l) {
+            h /= 360; s /= 100; l /= 100;
+            var r, g, b;
+            if (s === 0) {
+                r = g = b = l;
+            } else {
+                var hue2rgb = function(p, q, t) {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                };
+                var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                var p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+            return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+        }
+
+        function parseCSS() {
+            var input = document.getElementById('css-color').value.trim();
+            var resultDiv = document.getElementById('parse-result');
+            if (!input) {
+                resultDiv.textContent = '请输入CSS颜色值';
+                return;
+            }
+            try {
+                var ctx = document.createElement('canvas').getContext('2d');
+                ctx.fillStyle = input;
+                var computed = ctx.fillStyle;
+                if (computed === '#000000' && input !== '#000000' && input !== 'black') {
+                    resultDiv.textContent = '无法识别该颜色值，请检查格式';
+                    return;
+                }
+                if (computed.startsWith('#')) {
+                    syncAll(computed);
+                    var rgb = hexToRgb(computed);
+                    var hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+                    resultDiv.innerHTML = '';
+                    var lines = [
+                        'HEX: ' + computed,
+                        'RGB: rgb(' + rgb.r + ', ' + rgb.g + ', ' + rgb.b + ')',
+                        'HSL: hsl(' + hsl.h + ', ' + hsl.s + '%, ' + hsl.l + '%)'
+                    ];
+                    lines.forEach(function(line) {
+                        var div = document.createElement('div');
+                        div.textContent = line;
+                        resultDiv.appendChild(div);
+                    });
+                }
+            } catch (e) {
+                resultDiv.textContent = '解析失败，请检查颜色值格式';
+                console.error('color parse error:', e);
+            }
+        }
+
+        syncAll('#3b82f6');
+    </script>
+</body>
 </html>

@@ -1,5 +1,106 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>base64</title></head>
-<body><h1>base64</h1><p>TODO: 根据方案 [DS-03] 实现</p></body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Base64编解码 - 在线Base64编码解码工具 | 浏览器端处理</title>
+    <meta name="description" content="免费的在线Base64编解码工具，支持UTF-8安全编码，所有处理在浏览器端完成，数据不会上传到服务器。">
+    <link rel="canonical" href="https://你的域名/tools/base64.html">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-4xl mx-auto px-4 py-3">
+            <a href="../index.html" class="text-blue-600 hover:underline">&larr; 返回工具列表</a>
+        </div>
+    </nav>
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-2">Base64 编解码</h1>
+        <p class="text-gray-500 mb-6">所有处理在浏览器端完成，数据不会上传到服务器 &#x1F512;</p>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="font-semibold text-lg mb-3">Base64 编码</h2>
+            <textarea id="encode-input" class="w-full h-32 p-3 border rounded font-mono text-sm mb-3" placeholder="输入要编码的文本..." maxlength="1048576"></textarea>
+            <button onclick="doEncode()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mb-3">编码</button>
+            <div id="encode-result" class="font-mono bg-gray-100 p-3 rounded text-sm break-all"></div>
+            <button onclick="copyText('encode-result')" class="mt-2 text-sm text-blue-600 hover:underline">复制结果</button>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="font-semibold text-lg mb-3">Base64 解码</h2>
+            <textarea id="decode-input" class="w-full h-32 p-3 border rounded font-mono text-sm mb-3" placeholder="输入Base64字符串..." maxlength="1048576"></textarea>
+            <button onclick="doDecode()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mb-3">解码</button>
+            <div id="decode-result" class="font-mono bg-gray-100 p-3 rounded text-sm break-all"></div>
+            <button onclick="copyText('decode-result')" class="mt-2 text-sm text-blue-600 hover:underline">复制结果</button>
+        </div>
+    </main>
+    <script>
+        const MAX_SIZE = 1048576;
+
+        function doEncode() {
+            const input = document.getElementById('encode-input').value;
+            const result = document.getElementById('encode-result');
+            if (!input) {
+                result.textContent = '请输入要编码的文本';
+                return;
+            }
+            if (input.length > MAX_SIZE) {
+                result.textContent = '输入内容过大，请限制在1MB以内';
+                return;
+            }
+            try {
+                const encoder = new TextEncoder();
+                const bytes = encoder.encode(input);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                result.textContent = btoa(binary);
+            } catch (e) {
+                result.textContent = '编码失败，请检查输入内容';
+                console.error('base64 encode error:', e);
+            }
+        }
+
+        function doDecode() {
+            const input = document.getElementById('decode-input').value.trim();
+            const result = document.getElementById('decode-result');
+            if (!input) {
+                result.textContent = '请输入Base64字符串';
+                return;
+            }
+            if (input.length > MAX_SIZE) {
+                result.textContent = '输入内容过大，请限制在1MB以内';
+                return;
+            }
+            try {
+                const binary = atob(input);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                const decoder = new TextDecoder('utf-8');
+                result.textContent = decoder.decode(bytes);
+            } catch (e) {
+                result.textContent = '解码失败，请确认输入为有效的Base64字符串';
+                console.error('base64 decode error:', e);
+            }
+        }
+
+        function copyText(id) {
+            const el = document.getElementById(id);
+            const text = el.textContent;
+            if (!text || text === '-' || text.startsWith('请输入') || text.startsWith('编码失败') || text.startsWith('解码失败') || text.startsWith('输入内容过大')) {
+                return;
+            }
+            navigator.clipboard.writeText(text).then(function() {
+                var orig = el.textContent;
+                el.textContent = '[已复制] ' + orig;
+                setTimeout(function() { el.textContent = orig; }, 1500);
+            }).catch(function(e) {
+                console.error('clipboard error:', e);
+            });
+        }
+    </script>
+</body>
 </html>
