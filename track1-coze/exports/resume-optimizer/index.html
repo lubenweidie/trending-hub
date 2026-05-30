@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>简历优化助手 · 闲鱼上架</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:16px;-webkit-tap-highlight-color:transparent}
+.header{text-align:center;padding:20px 0;margin-bottom:20px}
+.header h1{font-size:22px;margin-bottom:6px}
+.header .price{font-size:32px;font-weight:700;color:#f59e0b}
+.header .premium{font-size:14px;color:#94a3b8}
+.card{background:#1e293b;border-radius:16px;padding:16px;margin-bottom:14px;border:1px solid #334155}
+.card-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.card-content{font-size:15px;line-height:1.6;word-break:break-all;color:#cbd5e1;max-height:120px;overflow-y:auto;margin-bottom:10px;white-space:pre-wrap}
+.card-content.short{max-height:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 20px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;user-select:none;-webkit-user-select:none}
+.btn:active{transform:scale(.96)}
+.btn-primary{background:#3b82f6;color:#fff;width:100%}
+.btn-copy{background:#334155;color:#94a3b8;font-size:13px;padding:8px 16px}
+.btn-copy.copied{background:#16a34a!important;color:#fff!important}
+.btn-row{display:flex;gap:8px;margin-top:8px}
+.btn-row .btn{flex:1}
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 24px;border-radius:12px;font-size:14px;font-weight:600;z-index:999;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+.section-title{font-size:16px;font-weight:700;margin:20px 0 12px;color:#f1f5f9}
+.images-guide{background:#1e293b;border-radius:16px;padding:16px;margin-bottom:14px}
+.images-guide ol{padding-left:20px;line-height:2}
+.images-guide li{color:#94a3b8;font-size:14px}
+.footer{text-align:center;padding:20px;color:#475569;font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>简历优化助手 · 上架助手</h1>
+  <div class="price">¥99<span style="font-size:16px;font-weight:400;color:#94a3b8"> 起</span></div>
+  <div class="premium">定制版 ¥299</div>
+</div>
+
+<div id="toast" class="toast">已复制到剪贴板</div>
+
+<!-- 标题 -->
+<div class="card">
+  <div class="card-label">商品标题 · 点下方复制</div>
+  <div class="card-content short" id="title">【AI简历优化】资深HR级智能体 自动诊断+改写 求职/跳槽/校招通用 秒出Markdown排版</div>
+  <button class="btn btn-copy" onclick="copy('title',this)">[复制标题]</button>
+</div>
+
+<!-- 价格 -->
+<div class="card">
+  <div class="card-label">价格</div>
+  <div class="card-content short" id="price">99</div>
+  <div class="btn-row">
+    <button class="btn btn-copy" onclick="copy('price',this)">[复制价格]</button>
+  </div>
+</div>
+
+<!-- 标签 -->
+<div class="card">
+  <div class="card-label">标签 · 最多5个</div>
+  <div class="card-content short" id="tags">#`</div>
+  <button class="btn btn-copy" onclick="copy('tags',this)">[复制标签]</button>
+</div>
+
+<!-- 描述 -->
+<div class="section-title">商品描述</div>
+<div class="card">
+  <div class="card-content" id="desc">【简历优化助手】Coze AI 智能体模板
+
+📌 适用人群：求职者、应届生、职场跳槽
+📂 分类：职场
+
+━━━━━━ 功能介绍 ━━━━━━
+✅ **3 大问题诊断** — 结构混乱？用词不专业？成果没量化？一键定位
+✅ **修改前后对比** — 每个问题给出原文 vs 优化版，看得见的提升
+✅ **完整简历输出** — 直接生成优化后的完整简历，Markdown 格式，复制即用
+✅ **1-10 分评分** — 量化你的简历水平，给出改进方向
+
+━━━━━━ 版本与价格 ━━━━━━
+🔹 标准版：¥99
+   → 智能体模板文件，一键导入你的 Coze 账号，永久使用
+
+🔹 定制版：¥299
+   → 标准版全部内容 + 深度定制优化
+
+━━━━━━ 使用方式 ━━━━━━
+1️⃣ 在应用商店下载"扣子"APP 或访问 coze.cn 注册（免费）
+2️⃣ 收到模板文件后一键导入
+3️⃣ 按说明输入内容，秒出结果
+
+━━━━━━ 买家必读 ━━━━━━
+⚠️ 本商品为虚拟商品，售出不退不换
+📱 需要自行注册 Coze 账号（完全免费）
+🔒 在你自己账号下运行，数据不上传第三方
+💬 使用问题随时问我，看到必回
+
+💡 下单后秒发货！如未及时回复请稍等，24h内必发。
+</div>
+  <button class="btn btn-copy" onclick="copy('desc',this)">[复制描述]</button>
+</div>
+
+<!-- 自动回复 -->
+<div class="section-title">自动回复</div>
+<div class="card">
+  <div class="card-content short" id="reply">你好！这个是Coze AI智能体模板，购买后发你导入文件，在你的Coze账号里用，永久有效～标准版¥99，定制版¥299。拍下秒发！</div>
+  <button class="btn btn-copy" onclick="copy('reply',this)">[复制自动回复]</button>
+</div>
+
+<!-- 全部复制 -->
+<button class="btn btn-primary" onclick="copyAll()" style="margin-top:12px">
+  一键复制全部 · 去闲鱼粘贴
+</button>
+
+<!-- 图片清单 -->
+<div class="section-title">需要准备的图片</div>
+<div class="images-guide">
+  <ol>
+    <li>封面图：大字标题 + 价格</li>
+    <li>功能截图：Coze Bot 对话界面</li>
+    <li>功能展示：核心能力 list</li>
+    <li>使用步骤：1-2-3 图解</li>
+    <li>版本对比：标准版 vs 定制版</li>
+  </ol>
+  <div style="margin-top:12px;font-size:13px;color:#64748b">
+    📁 图片位置: exports/resume-optimizer/images/<br>
+    🖼️ 运行 python image_generator.py generate resume-optimizer 自动生成
+  </div>
+</div>
+
+<div class="footer">
+  轨道1 · Coze模板上架系统<br>
+  安全模式 · 零风控风险
+</div>
+
+<script>function copy(id,btn){
+    var el=document.getElementById(id);
+    var text=el.textContent||el.innerText;
+    navigator.clipboard.writeText(text.trim()).then(function(){
+        if(btn){
+            var orig=btn.innerHTML;
+            btn.innerHTML='[已复制]';
+            btn.classList.add('copied');
+            setTimeout(function(){btn.innerHTML=orig;btn.classList.remove('copied');},1500);
+        }
+    });
+}
+function copyAll(){
+    var sections=['title','price','tags','desc','reply'];
+    var all='';
+    for(var i=0;i<sections.length;i++){
+        var el=document.getElementById(sections[i]);
+        if(el){
+            var t=(el.textContent||el.innerText).trim();
+            if(sections[i]==='price')t='价格: ¥'+t;
+            if(sections[i]==='tags')t='标签: '+t;
+            if(t)all+=t+'\n';
+        }
+    }
+    navigator.clipboard.writeText(all.trim()).then(function(){
+        var toast=document.getElementById('toast');
+        toast.textContent='全部复制完成! 去闲鱼粘贴吧';
+        toast.classList.add('show');
+        setTimeout(function(){toast.classList.remove('show');},2000);
+    });
+}
+</script>
+</body>
+</html>

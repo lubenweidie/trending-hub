@@ -1,0 +1,5 @@
+# 轨道1: Coze + 闲鱼 商品自动上架
+requests>=2.28
+openai>=1.0.0          # DeepSeek API (兼容 OpenAI SDK)
+pillow>=10.0.0         # 商品主图自动生成
+python-dotenv>=1.0.0   # .env 环境变量管理（可选）
