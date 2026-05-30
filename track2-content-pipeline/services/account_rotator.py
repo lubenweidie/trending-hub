@@ -5,11 +5,29 @@
   `opencli profile list` 可查看已连接的 profile（对应不同 Chrome 用户）。
   切换 profile = 切换登录账号，无需手动输密码。
 
-配置方式：
-  1. 在 Chrome 中为每个账号创建独立 Profile（chrome://settings/ → 管理个人资料）
-  2. 每个 Profile 登录对应平台
-  3. 运行 `opencli profile list` 查看各 Profile 的 contextId 或别名
-  4. 填写 accounts.json
+配置格式（accounts.json，以写手分组）：
+  {
+    "写手A": {
+      "opencli_profile": "ubz32tq7",    // Chrome Profile ID（opencli profile list 查看）
+      "platforms": ["baijiahao", "toutiao"]
+    },
+    "写手B": {
+      "opencli_profile": "profile_2_id",
+      "platforms": ["baijiahao"]
+    }
+  }
+
+说明：
+  - 顶层 key = 写手名称
+  - opencli_profile = Chrome Profile ID，空字符串 = 默认 Profile
+  - platforms = 该写手在哪些平台有号
+  - 同名写手出现在多个平台 = 同一个人、同一套 Cookie
+  - 缺平台只打 warn 不拦截
+
+操作步骤：
+  1. Chrome 新建 Profile → 登录平台号 → 连 opencli 扩展
+  2. opencli profile list 拿到 Profile ID
+  3. 填入 accounts.json
 """
 import json
 import subprocess
@@ -21,10 +39,25 @@ STATE_FILE = HERE / "config" / "_account_state.json"
 
 
 def load_accounts() -> dict:
-    """加载账号配置 {platform: [{name, opencli_profile}, ...]}"""
-    if ACCOUNTS_FILE.exists():
-        return json.loads(ACCOUNTS_FILE.read_text(encoding="utf-8"))
-    return {}
+    """加载账号配置，返回 {platform: [{name, opencli_profile}, ...]}
+
+    accounts.json 以写手分组，此函数转换为内部平台优先格式：
+      写手A: {profile, platforms: [baijiahao, toutiao]}
+      → baijiahao: [{name: 写手A, opencli_profile: xxx}], toutiao: [{name: 写手A, ...}]
+    """
+    if not ACCOUNTS_FILE.exists():
+        return {}
+    raw = json.loads(ACCOUNTS_FILE.read_text(encoding="utf-8"))
+    result = {}
+    for writer_name, writer_cfg in raw.items():
+        profile = writer_cfg.get("opencli_profile", "")
+        platforms = writer_cfg.get("platforms", [])
+        for plat in platforms:
+            result.setdefault(plat, []).append({
+                "name": writer_name,
+                "opencli_profile": profile,
+            })
+    return result
 
 
 def get_all_accounts(platform: str) -> list:
