@@ -16,6 +16,7 @@ TOKEN_PRICE = 0.001 / 1000  # ¥1/百万token
 
 # DeepSeek API 配置
 DEEPSEEK_API_URL = os.environ.get("AI_API_URL") or "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
 
 def _is_ai_enabled() -> bool:
